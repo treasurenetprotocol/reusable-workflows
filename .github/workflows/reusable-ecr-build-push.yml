@@ -3,6 +3,14 @@ name: Reusable workflow to build and push Docker image to Amazon ECR
 on:
   workflow_call:
     inputs:
+      gha-role-name:
+        description: 'Name of the IAM Role to assume in the AWS Management Account'
+        required: true
+        type: string
+      dockerfile-path:
+        description: 'Path to the Dockerfile'
+        required: true
+        type: string
       ecr-repo:
         description: 'name of the ECR repository'
         required: true
@@ -12,10 +20,10 @@ on:
         required: true
         type: string
     secrets:
-      AWS_ACCOUNT:
+      AWS_MANAGEMENT_ACCOUNT:
         description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
         required: true
-      AWS_ACCOUNT_TARGET:
+      AWS_TARGET_ACCOUNT:
         description: 'AWS Account for ECR Repository'
         required: true
 
@@ -34,7 +42,7 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2 
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/gha-oidc-cicd
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ inputs.ecr-repo-aws-region }}
       
@@ -44,15 +52,15 @@ jobs:
 
       - name: Docker build
         run: |
-          docker build -f ./dockerfile/api/Dockerfile \
-            -t ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }} \
-            -t ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest .
+          docker build -f ${{ inputs.dockerfile-path }} \
+            -t ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }} \
+            -t ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest .
 
       - name: Run Trivy vulnerability scanner
         id: trivy
         uses: aquasecurity/trivy-action@d710430a6722f083d3b36b8339ff66b32f22ee55 # v0.19.0
         with:
-          image-ref: ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }}
+          image-ref: ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }}
           format: 'table'
           ignore-unfixed: true
           vuln-type: 'os,library'
@@ -60,14 +68,15 @@ jobs:
 
       - name: Get AWS ECR login using oidc token
         run: |
-          aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com
+          aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} | docker login --username AWS --password-stdin ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com
 
       - name: Docker push to AWS ECR
         # Push the image to Amazon ECR only if the Trivy scan passes and the event is a push event
         # if: ${{ github.event_name == 'push' && steps.trivy.outputs.exit-code == 0 }}
+        if: ${{ github.event_name == 'push' }}
         run: |
-          docker push ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }}
-          docker push ${{ secrets.AWS_ACCOUNT_TARGET }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest
+          docker push ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:${{ github.sha }}
+          docker push ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest
 
       # [Extremely Important]
       - name: Remove the cached AWS credentials from the runner
