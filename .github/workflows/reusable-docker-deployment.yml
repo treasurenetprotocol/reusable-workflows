@@ -1,0 +1,70 @@
+name: Reusable workflow to deploy Docker image on AWS EC2 instance
+
+on:
+  workflow_call:
+    inputs:
+      gha-role-name:
+        description: 'Name of the IAM Role to assume in the AWS Management Account'
+        required: true
+        type: string
+      ecr-repo:
+        description: 'name of the ECR repository'
+        required: true
+        type: string
+      ecr-repo-aws-region:
+        description: 'AWS Region for ECR Repository'
+        required: true
+        type: string
+      ec2-instance-id:
+        description: 'ID of the EC2 instance'
+        required: true
+        type: string
+    secrets:
+      AWS_MANAGEMENT_ACCOUNT:
+        description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
+        required: true
+      AWS_TARGET_ACCOUNT:
+        description: 'AWS Account for ECR Repository'
+        required: true
+
+# Permission can be added at job level or workflow level
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read # This is required for actions/checkout
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2 
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.ecr-repo-aws-region }}
+
+      - name: Sts GetCallerIdentity
+        run: |
+          aws sts get-caller-identity
+      
+      - name: Retrieve secrets from AWS Secrets Manager
+        id: retrieve-secrets
+        run: |
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ secrets.SECRET_NAME }} --region ${{ secrets.AWS_REGION }} --query SecretString --output text)
+          echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
+      
+      - name: Update image in Docker Compose and redeploy
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ${{ secrets.EC2_SSH_KEY }} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+            export IMAGE_TAG=${{ github.sha }}
+            cd /path/to/your/docker-compose
+            sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/treasurenet/dataprovider:${IMAGE_TAG}@' docker-compose.yml
+            scp .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/path/to/your/docker-compose/.env
+            docker-compose --env-file .env pull
+            docker-compose --env-file .env up -d
+          EOF
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
