@@ -40,12 +40,12 @@ jobs:
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
 
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2 
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ inputs.ecr-repo-aws-region }}
-      
+
       - name: Sts GetCallerIdentity
         run: |
           aws sts get-caller-identity
@@ -79,6 +79,6 @@ jobs:
           docker push ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest
 
       # [Extremely Important]
-      - name: Remove the cached AWS credentials from the runner
-        run: |
-          rm -rf /home/runner/.docker/config.json
+      #- name: Remove the cached AWS credentials from the runner
+      #  run: |
+      #    rm -rf /home/runner/.docker/config.json
