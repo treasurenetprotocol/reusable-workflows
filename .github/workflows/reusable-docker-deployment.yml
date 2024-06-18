@@ -55,7 +55,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ inputs.ecr-repo-aws-region }}
+          aws-region: "us-west-1"
 
       - name: Sts GetCallerIdentity
         run: |
