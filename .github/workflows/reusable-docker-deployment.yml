@@ -15,15 +15,16 @@ on:
         description: 'AWS Region for ECR Repository'
         required: true
         type: string
+      aws-secret-name:
+        description: 'Name of the secret in AWS Secrets Manager'
+        required: true
+        type: string
     secrets:
       AWS_MANAGEMENT_ACCOUNT:
         description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
         required: true
       AWS_TARGET_ACCOUNT:
         description: 'AWS Account for ECR Repository'
-        required: true
-      AWS_SECRET_NAME:
-        description: 'Name of the secret in AWS Secrets Manager'
         required: true
       AWS_REGION:
         description: 'AWS Region for Secrets Manager'
@@ -64,7 +65,7 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager
         id: retrieve-secrets
         run: |
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ secrets.AWS_SECRET_NAME }} --region ${{ secrets.AWS_REGION }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }} --region ${{ secrets.AWS_REGION }} --query SecretString --output text)
           echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
 
       - name: Update image in Docker Compose and redeploy
