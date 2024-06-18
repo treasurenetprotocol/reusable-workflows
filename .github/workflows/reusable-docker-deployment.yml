@@ -26,6 +26,21 @@ on:
       AWS_TARGET_ACCOUNT:
         description: 'AWS Account for ECR Repository'
         required: true
+      AWS_SECRET_NAME:
+        description: 'Name of the secret in AWS Secrets Manager'
+        required: true
+      AWS_REGION:
+        description: 'AWS Region for Secrets Manager'
+        required: true
+      EC2_SSH_KEY:
+        description: 'Name of the EC2 SSH Key'
+        required: true
+      EC2_USER:
+        description: 'User for EC2 Instance'
+        required: true
+      EC2_HOST:
+        description: 'Hostname of the EC2 Instance'
+        required: true
 
 # Permission can be added at job level or workflow level
 permissions:
@@ -40,7 +55,7 @@ jobs:
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
 
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2 
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
@@ -49,13 +64,13 @@ jobs:
       - name: Sts GetCallerIdentity
         run: |
           aws sts get-caller-identity
-      
+
       - name: Retrieve secrets from AWS Secrets Manager
         id: retrieve-secrets
         run: |
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ secrets.SECRET_NAME }} --region ${{ secrets.AWS_REGION }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ secrets.AWS_SECRET_NAME }} --region ${{ secrets.AWS_REGION }} --query SecretString --output text)
           echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
-      
+
       - name: Update image in Docker Compose and redeploy
         run: |
           ssh -o StrictHostKeyChecking=no -i ${{ secrets.EC2_SSH_KEY }} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
