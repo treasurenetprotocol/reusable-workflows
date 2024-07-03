@@ -54,8 +54,8 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          role-to-assume: arn:aws:iam::381492270411:role/test
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC_test
           aws-region: ${{ inputs.ecr-repo-aws-region }}
 
       - name: Sts GetCallerIdentity
