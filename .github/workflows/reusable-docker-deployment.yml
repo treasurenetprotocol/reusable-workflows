@@ -89,7 +89,7 @@ jobs:
 
       - name: Update image in Docker Compose and redeploy
         run: |
-          scp -i ~/.ssh/id_rsa ${{inputs.composefile-path}} -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}/docker-compose.yml
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}/docker-compose.yml
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             export IMAGE_TAG=${{ github.sha }}
             mkdir -p /data/${{ inputs.ecr-repo }}
