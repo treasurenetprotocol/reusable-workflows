@@ -86,7 +86,8 @@ jobs:
 
       - name: Build docker compose file
         run: |
-          echo "DOCKER_COMPOSE_CONTENT=$(cat ${{inputs.composefile-path}})" >> $GITHUB_ENV
+          declare -g file_content=$(cat ${{inputs.composefile-path}})
+          echo "DOCKER_COMPOSE_CONTENT=$file_content" >> $GITHUB_ENV
 
       - name: Set up ssh key
         run: |
