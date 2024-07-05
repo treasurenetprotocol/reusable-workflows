@@ -84,11 +84,6 @@ jobs:
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }} --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
           echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
 
-      - name: Build docker compose file
-        run: |
-          declare -g file_content=$(cat ${{inputs.composefile-path}})
-          echo "DOCKER_COMPOSE_CONTENT=$file_content" >> $GITHUB_ENV
-
       - name: Set up ssh key
         run: |
           mkdir -p ~/.ssh
@@ -98,6 +93,7 @@ jobs:
 
       - name: Update image in Docker Compose and redeploy
         run: |
+          scp ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             export IMAGE_TAG=${{ github.sha }}
             cd /data
