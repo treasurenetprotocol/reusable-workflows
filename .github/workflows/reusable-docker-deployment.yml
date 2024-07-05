@@ -19,6 +19,9 @@ on:
         description: 'Name of the secret in AWS Secrets Manager'
         required: true
         type: string
+      composefile-path:
+        description: 'Path to the docker-compose.yml file'
+        required: true
     secrets:
       AWS_MANAGEMENT_ACCOUNT:
         description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
