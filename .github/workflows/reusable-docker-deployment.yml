@@ -78,9 +78,6 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager
         id: retrieve-secrets
         run: |
-          aws configure list
-          aws secretsmanager list-secrets
-          aws secretsmanager list-secrets --region us-west-1
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }} --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
           echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
 
@@ -93,6 +90,15 @@ jobs:
 
       - name: Update image in Docker Compose and redeploy
         run: |
-          scp -i ~/.ssh/id_rsa ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}/docker-compose.yml
+          scp -i ~/.ssh/id_rsa ${{inputs.composefile-path}} -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+            export IMAGE_TAG=${{ github.sha }}
+            mkdir -p /data/${{ inputs.ecr-repo }}
+            cd /data/${{ inputs.ecr-repo }}
+            sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/treasurenet/dataprovider:${IMAGE_TAG}@' docker-compose.yml
+            scp .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/.env
+            docker-compose --env-file .env pull
+            docker-compose --env-file .env up -d
+          EOF
         env:
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
