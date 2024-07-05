@@ -100,8 +100,7 @@ jobs:
             cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv /home/ec2-user/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
             mv /home/ec2-user/${{ inputs.ecr-repo }}.env ./.env
-            echo "s@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${IMAGE_TAG}@"
-            sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${IMAGE_TAG}@' docker-compose.yml
+            sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${IMAGE_TAG}|' docker-compose.yml
             docker-compose down
             docker-compose pull
             docker-compose up -d
