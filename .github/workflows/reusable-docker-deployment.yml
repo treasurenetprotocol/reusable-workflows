@@ -111,3 +111,8 @@ jobs:
             docker-compose pull
             docker-compose up -d
           EOF
+
+      # [Extremely Important]
+      - name: Remove the cached AWS credentials from the runner
+        run: |
+          rm -rf /home/runner/.docker/config.json

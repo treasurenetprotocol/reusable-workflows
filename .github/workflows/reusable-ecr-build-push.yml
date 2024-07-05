@@ -79,6 +79,6 @@ jobs:
           docker push ${{ secrets.AWS_TARGET_ACCOUNT }}.dkr.ecr.${{ inputs.ecr-repo-aws-region }}.amazonaws.com/${{ inputs.ecr-repo }}:latest
 
       # [Extremely Important]
-      #- name: Remove the cached AWS credentials from the runner
-      #  run: |
-      #    rm -rf /home/runner/.docker/config.json
+      - name: Remove the cached AWS credentials from the runner
+        run: |
+          rm -rf /home/runner/.docker/config.json
