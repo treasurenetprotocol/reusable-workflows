@@ -93,14 +93,6 @@ jobs:
 
       - name: Update image in Docker Compose and redeploy
         run: |
-          scp -i ~/.ssh/id_rsa ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}.yaml
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-            export IMAGE_TAG=${{ github.sha }}
-            cd /data
-            sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/treasurenet/dataprovider:${IMAGE_TAG}@' ${{ inputs.ecr-repo }}.yml
-            scp .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/path/to/your/docker-compose/.env
-            docker-compose --env-file .env pull
-            docker-compose --env-file .env -f ${{ inputs.ecr-repo }}.yaml up -d
-          EOF
+          scp -i ~/.ssh/id_rsa ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/${{ inputs.ecr-repo }}/docker-compose.yml
         env:
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
