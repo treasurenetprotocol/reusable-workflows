@@ -43,6 +43,9 @@ on:
         description: 'Hostname of the EC2 Instance'
         required: true
 
+env:
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+
 # Permission can be added at job level or workflow level
 permissions:
   id-token: write # This is required for requesting the JWT
@@ -90,13 +93,14 @@ jobs:
       - name: Update image in Docker Compose and redeploy
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/${{ inputs.ecr-repo }}.yml
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/${{ inputs.ecr-repo }}.env
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             export IMAGE_TAG=${{ github.sha }}
-            mkdir -p /data/${{ inputs.ecr-repo }}
-            cd /data/${{ inputs.ecr-repo }}
+            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
+            cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv /home/ec2-user/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+            mv /home/ec2-user/${{ inputs.ecr-repo }}.env ./.env
             sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/treasurenet/dataprovider:${IMAGE_TAG}@' docker-compose.yml
-            scp .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/data/.env
             docker-compose --env-file .env pull
             docker-compose --env-file .env up -d
           EOF
