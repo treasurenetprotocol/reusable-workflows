@@ -80,9 +80,16 @@ jobs:
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }} --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
           echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
 
+      - name: Set up ssh key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+
       - name: Update image in Docker Compose and redeploy
         run: |
-          ssh -o StrictHostKeyChecking=no -i ${{ secrets.EC2_SSH_KEY }} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             export IMAGE_TAG=${{ github.sha }}
             cd /path/to/your/docker-compose
             sed -i 's@image: .*$@image: ${{ secrets.ECR_REGISTRY }}/treasurenet/dataprovider:${IMAGE_TAG}@' docker-compose.yml
