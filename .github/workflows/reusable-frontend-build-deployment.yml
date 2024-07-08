@@ -43,6 +43,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
 
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.ecr-repo-aws-region }}
+
+      - name: Assume role in target account
+        id: assume-role-target
+        run: |
+          ROLE_ARN="arn:aws:iam::${{ secrets.AWS_TARGET_ACCOUNT }}:role/iac-role"
+          CREDS=$(aws sts assume-role --role-arn $ROLE_ARN --role-session-name GitHubAction --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+          echo "AWS_ACCESS_KEY_ID=$(echo $CREDS | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=$(echo $CREDS | cut -d ' ' -f 2)" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=$(echo $CREDS | cut -d ' ' -f 3)" >> $GITHUB_ENV
+
+      - name: Sts GetCallerIdentity
+        run: |
+          aws sts get-caller-identity
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -63,17 +83,21 @@ jobs:
         run: |
           tar -zcvf ./dist_${{ inputs.repo-name }}.tar.gz -C dist .
 
+      - name: Upload Archive file to S3
+        run: |
+          TIMESTAMP=$(date '+%Y%m%d')
+          aws s3 cp ./dist_${{ inputs.repo-name }}.tar.gz s3://tn-deployment-file-archive/${{ inputs.repo-name }}/$TIMESTAMP/dist_${{ inputs.repo-name }}.tar.gz
+
       - name: Copy archive to server
         run: |
-          TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ./dist_${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}_$TIMESTAMP.tar.gz
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ./dist_${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}.tar.gz
 
       - name: Extract and replace files
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            tar -zxvf /home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}_$TIMESTAMP.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            tar -zxvf /home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/dist_${{ inputs.repo-name }}.tar.gz
           EOF
 
