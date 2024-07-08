@@ -70,24 +70,24 @@ jobs:
           npm install --silent
           npm run ${{ inputs.build-command }} --slient
 
-      - name: Set up ssh key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa    
-
       - name: Archive files
         run: |
           tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
 
-      - name: Upload Archive file to S3
+      - name: Upload Archive file to AWS S3
         run: |
           aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
           aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
           aws configure set region ${{ inputs.s3-aws-region }}
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{env.DATE}}/${{ inputs.repo-name }}_${{env.TIME}}.tar.gz
 
-      - name: Download, extract and replace files
+      - name: Set up ssh key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa  
+
+      - name: Download(from AWS S3), extract and replace files
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
           
