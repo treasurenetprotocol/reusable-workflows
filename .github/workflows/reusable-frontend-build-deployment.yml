@@ -50,10 +50,8 @@ jobs:
 
       - name: Build code
         run: |
-          npm install
+          npm install --silent
           npm run ${{ inputs.build-command }}
-        env:
-          NPM_CONFIG_LOGLEVEL: error
 
       - name: Set up ssh key
         run: |
