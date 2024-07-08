@@ -79,17 +79,12 @@ jobs:
         run: |
           tar -zcvf ./dist_${{ inputs.repo-name }}.tar.gz -C dist .
 
-      - name: Install AWS CLI
-        uses: aws-actions/aws-cli-action@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.s3-aws-region }}
-          version: 2
-
       - name: Upload Archive file to S3
         run: |
           TIMESTAMP=$(date '+%Y%m%d')
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region ${{ inputs.s3-aws-region }}
           aws s3 cp ./dist_${{ inputs.repo-name }}.tar.gz s3://tn-deployment-file-archive/${{ inputs.repo-name }}/$TIMESTAMP/dist_${{ inputs.repo-name }}.tar.gz
 
       - name: Copy archive to server
