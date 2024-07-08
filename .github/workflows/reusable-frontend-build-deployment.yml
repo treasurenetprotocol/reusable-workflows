@@ -55,9 +55,12 @@ jobs:
 
       - name: Send files to AWS EC2
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no dist ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/${{ inputs.repo-name }}
+          tar -zcvf ./dist_${{ inputs.repo-name }}.tar.gz ./dist
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ./dist_${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/dist_${{ inputs.repo-name }}.tar.gz
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            mv /home/ec2-user/${{ inputs.repo-name }} ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}         
+            tar -zxvf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/dist_${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/dist_${{ inputs.repo-name }}.tar.gz
+
           EOF
