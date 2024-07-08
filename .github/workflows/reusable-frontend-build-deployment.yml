@@ -60,8 +60,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set timestamp
-        id: set-timestamp
+      - name: Set date and time
         run: |
           echo "DATE=$(date '+%Y%m%d')"  >> $GITHUB_ENV
           echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
@@ -85,7 +84,7 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=$(echo $CREDS | cut -d ' ' -f 2)" >> $GITHUB_ENV
           echo "AWS_SESSION_TOKEN=$(echo $CREDS | cut -d ' ' -f 3)" >> $GITHUB_ENV
 
-      - name: Sts GetCallerIdentity
+      - name: Sts get caller identity
         run: |
           aws sts get-caller-identity
 
@@ -113,7 +112,7 @@ jobs:
         run: |
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${DATE}/${{ inputs.repo-name }}_${TIME}.tar.gz
 
-      - name: Extract and replace files
+      - name: Download, extract and replace files
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
           
@@ -129,7 +128,7 @@ jobs:
           
           EOF
 
-      - name: Purge Cloudflare Cache
+      - name: Purge cloudflare cache
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
