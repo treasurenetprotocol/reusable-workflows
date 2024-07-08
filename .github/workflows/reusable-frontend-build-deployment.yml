@@ -52,23 +52,19 @@ env:
   BUCKET_NAME: tn-deployment-file-archive
 
 permissions:
-  id-token: write # This is required for requesting the JWT
-  contents: read # This is required for actions/checkout
+  id-token: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    outputs:
-      date: ${{ steps.set-timestamp.outputs.date }}
-      time: ${{ steps.set-timestamp.outputs.time }}
-
     steps:
       - name: Set timestamp
         id: set-timestamp
         run: |
-          echo "::set-output name=date::$(date '+%Y%m%d')"
-          echo "::set-output name=time::$(date '+%Y%m%d_%H%M%S')"
+          echo "DATE=$(date '+%Y%m%d')"  >> $GITHUB_ENV
+          echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
 
       - name: Checkout code
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -115,7 +111,7 @@ jobs:
 
       - name: Upload Archive file to S3
         run: |
-          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ needs.build.outputs.date }}/${{ inputs.repo-name }}_${{needs.build.outputs.time}}.tar.gz
+          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${DATE}/${{ inputs.repo-name }}_${TIME}.tar.gz
 
       - name: Extract and replace files
         run: |
@@ -124,7 +120,7 @@ jobs:
             aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
             aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             aws configure set default.region ${{ inputs.s3-aws-region }}
-            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ needs.build.outputs.date }}/${{ inputs.repo-name }}_${{ needs.build.outputs.time }}.tar.gz /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${DATE}/${{ inputs.repo-name }}_${TIME}.tar.gz /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
           
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
