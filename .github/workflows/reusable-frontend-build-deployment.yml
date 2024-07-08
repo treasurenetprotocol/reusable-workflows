@@ -51,7 +51,7 @@ jobs:
       - name: Build code
         run: |
           npm install --silent
-          npm run ${{ inputs.build-command }}
+          npm run ${{ inputs.build-command }} --slient
 
       - name: Set up ssh key
         run: |
