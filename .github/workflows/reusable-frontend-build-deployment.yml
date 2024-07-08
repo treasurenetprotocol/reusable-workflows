@@ -59,14 +59,21 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa    
 
-      - name: Send files to AWS EC2
+      - name: Archive files
         run: |
           tar -zcvf ./dist_${{ inputs.repo-name }}.tar.gz -C dist .
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ./dist_${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/dist_${{ inputs.repo-name }}.tar.gz
+
+      - name: Copy archive to server
+        run: |
+          TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ./dist_${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}_$TIMESTAMP.tar.gz
+
+      - name: Extract and replace files
+        run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            tar -zxvf /home/ec2-user/dist_${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            tar -zxvf /home/${{ secrets.EC2_USER }}/dist_${{ inputs.repo-name }}_$TIMESTAMP.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/dist_${{ inputs.repo-name }}.tar.gz
           EOF
 
