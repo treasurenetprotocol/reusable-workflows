@@ -30,9 +30,6 @@ on:
       AWS_TARGET_ACCOUNT:
         description: 'AWS Account for ECR Repository'
         required: true
-      AWS_REGION:
-        description: 'AWS Region for Secrets Manager'
-        required: true
       EC2_SSH_KEY:
         description: 'Name of the EC2 SSH Key'
         required: true
