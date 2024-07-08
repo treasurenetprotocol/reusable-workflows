@@ -3,10 +3,6 @@ name: Reusable build frontend code and send it to a specified AWS EC2 instance
 on:
   workflow_call:
     inputs:
-      gha-role-name:
-        description: 'Name of the IAM Role to assume in the AWS Management Account'
-        required: true
-        type: string
       repo-name:
         description: 'name of repository'
         required: true
@@ -25,11 +21,11 @@ on:
         type: string
 
     secrets:
-      AWS_MANAGEMENT_ACCOUNT:
-        description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
+      S3_OWNER_ACCESS_KEY_ID:
+        description: 'AWS S3 Owner Access Key ID'
         required: true
-      AWS_TARGET_ACCOUNT:
-        description: 'AWS Account for Repository'
+      S3_OWNER_SECRET_ACCESS_KEY:
+        description: 'AWS S3 Owner Secret Access Key'
         required: true
       EC2_SSH_KEY:
         description: 'Name of the EC2 SSH Key'
@@ -51,10 +47,6 @@ env:
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   BUCKET_NAME: tn-deployment-file-archive
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -67,26 +59,6 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-
-      - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ inputs.s3-aws-region }}
-
-      - name: Assume role in target account
-        id: assume-role-target
-        run: |
-          ROLE_ARN="arn:aws:iam::${{ secrets.AWS_TARGET_ACCOUNT }}:role/iac-role"
-          CREDS=$(aws sts assume-role --role-arn $ROLE_ARN --role-session-name GitHubAction --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
-          echo "AWS_ACCESS_KEY_ID=$(echo $CREDS | cut -d ' ' -f 1)" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=$(echo $CREDS | cut -d ' ' -f 2)" >> $GITHUB_ENV
-          echo "AWS_SESSION_TOKEN=$(echo $CREDS | cut -d ' ' -f 3)" >> $GITHUB_ENV
-
-      - name: Sts get caller identity
-        run: |
-          aws sts get-caller-identity
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -110,14 +82,17 @@ jobs:
 
       - name: Upload Archive file to S3
         run: |
+          aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ inputs.s3-aws-region }}
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{env.DATE}}/${{ inputs.repo-name }}_${{env.TIME}}.tar.gz
 
       - name: Download, extract and replace files
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
           
-            aws configure set aws_access_key_id ${{ env.AWS_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ env.AWS_SECRET_ACCESS_KEY }}
+            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
             aws configure set region ${{ inputs.s3-aws-region }}
             aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{env.DATE}}/${{ inputs.repo-name }}_${{env.TIME}}.tar.gz /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
           
