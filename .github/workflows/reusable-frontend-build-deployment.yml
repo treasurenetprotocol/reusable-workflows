@@ -1,0 +1,114 @@
+name: Reusable build frontend code and send it to a specified AWS EC2 instance
+
+on:
+  workflow_call:
+    inputs:
+      repo-name:
+        description: 'name of repository'
+        required: true
+        type: string
+      node-version:
+        description: 'Node version'
+        required: true
+        type: string
+      build-command:
+        description: 'Build command'
+        required: true
+        type: string
+      s3-aws-region:
+        description: 'AWS Region for S3 Bucket'
+        required: true
+        type: string
+
+    secrets:
+      S3_OWNER_ACCESS_KEY_ID:
+        description: 'AWS S3 Owner Access Key ID'
+        required: true
+      S3_OWNER_SECRET_ACCESS_KEY:
+        description: 'AWS S3 Owner Secret Access Key'
+        required: true
+      EC2_SSH_KEY:
+        description: 'Name of the EC2 SSH Key'
+        required: true
+      EC2_USER:
+        description: 'User for EC2 Instance'
+        required: true
+      EC2_HOST:
+        description: 'Hostname of the EC2 Instance'
+        required: true
+      CLOUDFLARE_API_TOKEN:
+        description: 'Cloudflare API Token'
+        required: true
+      CLOUDFLARE_ZONE_ID:
+        description: 'Cloudflare Zone ID'
+        required: true
+
+env:
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+  BUCKET_NAME: tn-deployment-file-archive
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Set date and time
+        run: |
+          echo "DATE=$(date '+%Y%m%d')"  >> $GITHUB_ENV
+          echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+
+      - name: Checkout code
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build code
+        run: |
+          npm install --silent
+          npm run ${{ inputs.build-command }} --slient
+
+      - name: Archive files
+        run: |
+          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
+
+      - name: Upload Archive file to AWS S3
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ inputs.s3-aws-region }}
+          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
+
+      - name: Set up ssh key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa  
+
+      - name: Download(from AWS S3), extract and replace files
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          
+            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+            aws configure set region ${{ inputs.s3-aws-region }}
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+          
+            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
+            tar -zxvf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+          
+          EOF
+
+      - name: Purge cloudflare cache
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data '{"purge_everything":true}'    
