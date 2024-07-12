@@ -87,7 +87,7 @@ jobs:
           
           while IFS='=' read -r key value; do
           if grep -q "^$key=" ${env}.bak; then
-            sed -i "s/^$key=.*/$key=$value/" ${env}.bak
+            sed -i "s|^$key=.*|$key=$value|" ${env}.bak
           else
             echo "$key=$value" >> ${env}.bak
           fi
@@ -113,7 +113,7 @@ jobs:
           
           while IFS='=' read -r key value; do
           if grep -q "^$key=" ${env}.bak; then
-            sed -i "s/^$key=.*/$key=$value/" ${env}.bak
+            sed -i "s|^$key=.*|$key=$value|" ${env}.bak
           else
             echo "$key=$value" >> ${env}.bak
           fi
