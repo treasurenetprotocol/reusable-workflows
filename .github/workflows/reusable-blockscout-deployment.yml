@@ -1,5 +1,46 @@
 name: Deploy Blockscout
 
+on:
+  workflow_call:
+    inputs:
+      gha-role-name:
+        description: 'Name of the IAM Role to assume in the AWS Management Account'
+        required: true
+        type: string
+      repo-name:
+        description: 'name of the ECR repository'
+        required: true
+        type: string
+      aws-region:
+        description: 'AWS Region for ECR Repository'
+        required: true
+        type: string
+      aws-secret-name:
+        description: 'Name of the secret in AWS Secrets Manager'
+        required: true
+        type: string
+    secrets:
+      AWS_MANAGEMENT_ACCOUNT:
+        description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
+        required: true
+      AWS_TARGET_ACCOUNT:
+        description: 'AWS Account for ECR Repository'
+        required: true
+      EC2_SSH_KEY:
+        description: 'Name of the EC2 SSH Key'
+        required: true
+      EC2_USER:
+        description: 'User for EC2 Instance'
+        required: true
+      EC2_HOST:
+        description: 'Hostname of the EC2 Instance'
+        required: true
+
+
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read # This is required for actions/checkout
+
 jobs:
   build:
     runs-on: self-hosted
@@ -13,7 +54,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ inputs.ecr-repo-aws-region }}
+          aws-region: ${{ inputs.aws-region }}
 
       - name: Assume role in target account
         id: assume-role-target
@@ -31,9 +72,9 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager
         id: retrieve-secrets
         run: |
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}_blockscout --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}_blockscout --region ${{ inputs.aws-region }} --query SecretString --output text)
           echo $SECRET_STRING | jq -r 'to_entries | .[] | "yq eval \".\(.key) = \"\(.value|tostring)\"\" -i ./docker-compose/envs/common-blockscout.yaml"' | sh
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}_stats --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}_stats --region ${{ inputs.aws-region }} --query SecretString --output text)
           echo $SECRET_STRING | jq -r 'to_entries | .[] | "yq eval \".\(.key) = \"\(.value|tostring)\"\" -i ./docker-compose/envs/common-stats.yaml"' | sh
 
       - name: Set up ssh key
@@ -50,8 +91,8 @@ jobs:
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
-            cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
+            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             tar -zxvf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz ./
             docker-compose down
             docker-compose pull
