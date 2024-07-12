@@ -71,7 +71,7 @@ jobs:
           aws sts get-caller-identity
 
       - name: Retrieve secrets from AWS Secrets Manager(blockscout)
-        id: retrieve-secrets
+        id: retrieve-secrets-blockscout
         run: |
           if [ -f .env ]; then
             existing_env=$(cat ./docker-compose/envs/common-blockscout.env)
@@ -84,7 +84,7 @@ jobs:
           echo "$combined_env" > ./docker-compose/envs/common-blockscout.env
 
       - name: Retrieve secrets from AWS Secrets Manager(stats)
-        id: retrieve-secrets
+        id: retrieve-secrets-stats
         run: |
           if [ -f .env ]; then
             existing_env=$(cat ./docker-compose/envs/common-stats.env)
