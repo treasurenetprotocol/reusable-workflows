@@ -43,7 +43,7 @@ permissions:
   contents: read # This is required for actions/checkout
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: self-hosted
 
     steps:
@@ -74,7 +74,7 @@ jobs:
         id: retrieve-secrets-blockscout
         run: |
           name=blockscout
-          env=./docker-compose/envs/common-$name.env
+          env=./docker-compose/envs/common-${name}.env
           
           if [ -f ${env} ]; then
             cp ${env} ${env}.bak
@@ -82,7 +82,7 @@ jobs:
             touch ${env}.bak
           fi
           
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/$name --region ${{ inputs.aws-region }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
           echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
           
           while IFS='=' read -r key value; do
@@ -99,8 +99,8 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager(stats)
         id: retrieve-secrets-stats
         run: |
-          name=stats
-          env=./docker-compose/envs/common-$name.env
+          name=blockscout
+          env=./docker-compose/envs/common-${name}.env
           
           if [ -f ${env} ]; then
             cp ${env} ${env}.bak
@@ -108,7 +108,7 @@ jobs:
             touch ${env}.bak
           fi
           
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/$name --region ${{ inputs.aws-region }} --query SecretString --output text)
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
           echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
           
           while IFS='=' read -r key value; do
