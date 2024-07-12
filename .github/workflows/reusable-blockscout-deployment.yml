@@ -73,7 +73,7 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager(blockscout)
         id: retrieve-secrets-blockscout
         run: |
-          if [ -f .env ]; then
+          if [ -f ./docker-compose/envs/common-blockscout.env ]; then
             existing_env=$(cat ./docker-compose/envs/common-blockscout.env)
           else
             existing_env=""
@@ -86,7 +86,7 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager(stats)
         id: retrieve-secrets-stats
         run: |
-          if [ -f .env ]; then
+          if [ -f ./docker-compose/envs/common-stats.env ]; then
             existing_env=$(cat ./docker-compose/envs/common-stats.env)
           else
             existing_env=""
