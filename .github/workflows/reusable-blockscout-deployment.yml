@@ -35,7 +35,8 @@ on:
       EC2_HOST:
         description: 'Hostname of the EC2 Instance'
         required: true
-
+env:
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
 
 permissions:
   id-token: write # This is required for requesting the JWT
