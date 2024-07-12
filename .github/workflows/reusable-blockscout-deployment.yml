@@ -70,7 +70,7 @@ jobs:
         run: |
           aws sts get-caller-identity
 
-      - name: Retrieve secrets from AWS Secrets Manager
+      - name: Retrieve secrets from AWS Secrets Manager(blockscout)
         id: retrieve-secrets
         run: |
           if [ -f .env ]; then
@@ -82,6 +82,19 @@ jobs:
           new_env=$(echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"')
           combined_env=$(echo -e "$existing_env\n$new_env" | awk '!seen[$0]++')
           echo "$combined_env" > ./docker-compose/envs/common-blockscout.env
+
+      - name: Retrieve secrets from AWS Secrets Manager(stats)
+        id: retrieve-secrets
+        run: |
+          if [ -f .env ]; then
+            existing_env=$(cat ./docker-compose/envs/common-stats.env)
+          else
+            existing_env=""
+          fi
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/stats --region ${{ inputs.aws-region }} --query SecretString --output text)
+          new_env=$(echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"')
+          combined_env=$(echo -e "$existing_env\n$new_env" | awk '!seen[$0]++')
+          echo "$combined_env" > ./docker-compose/envs/common-stats.env
 
       - name: Set up ssh key
         run: |
