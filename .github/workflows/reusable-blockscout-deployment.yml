@@ -73,28 +73,55 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager(blockscout)
         id: retrieve-secrets-blockscout
         run: |
-          if [ -f ./docker-compose/envs/common-blockscout.env ]; then
-            existing_env=$(cat ./docker-compose/envs/common-blockscout.env)
+          env=./docker-compose/envs/common-blockscout.env
+          env.bak=./docker-compose/envs/common-blockscout.env.bak
+          env.temp=./docker-compose/envs/common-blockscout.env.temp
+          
+          if [ -f $env ]; then
+            cp $env $env.bak
           else
-            existing_env=""
+            touch $env.bak
           fi
+          
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/blockscout --region ${{ inputs.aws-region }} --query SecretString --output text)
-          new_env=$(echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"')
-          combined_env=$(echo -e "$existing_env\n$new_env" | awk '!seen[$0]++')
-          echo "$combined_env" > ./docker-compose/envs/common-blockscout.env
+          echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > $env.temp
+          
+          while IFS='=' read -r key value; do
+          if grep -q "^$key=" $env.bak; then
+            sed -i "s/^$key=.*/$key=$value/" $env.bak
+          else
+            echo "$key=$value" >> $env.bak
+          fi
+          done < $env.temp
+          
+          mv $env.bak $env
+          
 
       - name: Retrieve secrets from AWS Secrets Manager(stats)
         id: retrieve-secrets-stats
         run: |
-          if [ -f ./docker-compose/envs/common-stats.env ]; then
-            existing_env=$(cat ./docker-compose/envs/common-stats.env)
+          env=./docker-compose/envs/common-stats.env
+          env.bak=./docker-compose/envs/common-stats.env.bak
+          env.temp=./docker-compose/envs/common-stats.env.temp
+          
+          if [ -f $env ]; then
+            cp $env $env.bak
           else
-            existing_env=""
+            touch $env.bak
           fi
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/stats --region ${{ inputs.aws-region }} --query SecretString --output text)
-          new_env=$(echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"')
-          combined_env=$(echo -e "$existing_env\n$new_env" | awk '!seen[$0]++')
-          echo "$combined_env" > ./docker-compose/envs/common-stats.env
+          
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/blockscout --region ${{ inputs.aws-region }} --query SecretString --output text)
+          echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > $env.temp
+          
+          while IFS='=' read -r key value; do
+          if grep -q "^$key=" $env.bak; then
+            sed -i "s/^$key=.*/$key=$value/" $env.bak
+          else
+            echo "$key=$value" >> $env.bak
+          fi
+          done < $env.temp
+          
+          mv $env.bak $env
 
       - name: Set up ssh key
         run: |
