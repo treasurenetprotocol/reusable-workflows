@@ -99,7 +99,32 @@ jobs:
       - name: Retrieve secrets from AWS Secrets Manager(stats)
         id: retrieve-secrets-stats
         run: |
-          name=blockscout
+          name=stats
+          env=./docker-compose/envs/common-${name}.env
+          
+          if [ -f ${env} ]; then
+            cp ${env} ${env}.bak
+          else
+            touch ${env}.bak
+          fi
+          
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
+          echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
+          
+          while IFS='=' read -r key value; do
+          if grep -q "^$key=" ${env}.bak; then
+            sed -i "s|^$key=.*|$key=$value|" ${env}.bak
+          else
+            echo "$key=$value" >> ${env}.bak
+          fi
+          done < ${env}.temp
+          
+          mv ${env}.bak ${env}
+
+      - name: Retrieve secrets from AWS Secrets Manager(frontend)
+        id: retrieve-secrets-stats
+        run: |
+          name=frontend
           env=./docker-compose/envs/common-${name}.env
           
           if [ -f ${env} ]; then
