@@ -72,9 +72,9 @@ jobs:
 
       - name: Retrieve secrets from AWS Secrets Manager
         run: |
-          for name in blockscout stats frontend user-ops-indexer; do
+          for envname in blockscout stats frontend user-ops-indexer; do
             
-            name=${{matrix.envFiles}}
+            name=$envname
             env=./docker-compose/envs/common-${name}.env
             
             if [ -f ${env} ]; then
