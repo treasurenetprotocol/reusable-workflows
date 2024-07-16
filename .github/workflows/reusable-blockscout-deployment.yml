@@ -46,14 +46,6 @@ jobs:
   build-and-deploy:
     runs-on: self-hosted
 
-    strategy:
-      matrix:
-        envFiles:
-          - blockscout
-          - stats
-          - frontend
-          - user-ops-indexer
-
     steps:
       - name: Checkout code
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -80,27 +72,31 @@ jobs:
 
       - name: Retrieve secrets from AWS Secrets Manager
         run: |
-          name=${{matrix.envFiles}}
-          env=./docker-compose/envs/common-${name}.env
+          for name in blockscout stats frontend user-ops-indexer; do
+            
+            name=${{matrix.envFiles}}
+            env=./docker-compose/envs/common-${name}.env
+            
+            if [ -f ${env} ]; then
+              cp ${env} ${env}.bak
+            else
+              touch ${env}.bak
+            fi
+            
+            SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
+            echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
+            
+            while IFS='=' read -r key value; do
+            if grep -q "^$key=" ${env}.bak; then
+              sed -i "s|^$key=.*|$key=$value|" ${env}.bak
+            else
+              echo "$key=$value" >> ${env}.bak
+            fi
+            done < ${env}.temp
+            
+            mv ${env}.bak ${env}
           
-          if [ -f ${env} ]; then
-            cp ${env} ${env}.bak
-          else
-            touch ${env}.bak
-          fi
-          
-          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
-          echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
-          
-          while IFS='=' read -r key value; do
-          if grep -q "^$key=" ${env}.bak; then
-            sed -i "s|^$key=.*|$key=$value|" ${env}.bak
-          else
-            echo "$key=$value" >> ${env}.bak
-          fi
-          done < ${env}.temp
-          
-          mv ${env}.bak ${env}
+          done
 
       - name: Set up ssh key
         run: |
