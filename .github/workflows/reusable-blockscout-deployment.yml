@@ -98,6 +98,13 @@ jobs:
           
           done
 
+      - name: Retrieve SSL secrets from AWS Secrets Manager
+        run: |
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/nginx --region ${{ inputs.aws-region }} --query SecretString --output text)
+          echo "$SECRET_STRING" > ssl_secrets.json
+          cat ssl_secrets.json | jq -r .ssl_certificate > ./docker-compose/proxy/certs/cloudflare.pem
+          cat ssl_secrets.json | jq -r .ssl_key > ./docker-compose/proxy/certs/cloudflare.key
+
       - name: Set up ssh key
         run: |
           mkdir -p ~/.ssh
