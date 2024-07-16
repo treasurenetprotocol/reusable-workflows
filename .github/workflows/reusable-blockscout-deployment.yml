@@ -1,0 +1,128 @@
+name: Deploy Blockscout
+
+on:
+  workflow_call:
+    inputs:
+      gha-role-name:
+        description: 'Name of the IAM Role to assume in the AWS Management Account'
+        required: true
+        type: string
+      repo-name:
+        description: 'name of the ECR repository'
+        required: true
+        type: string
+      aws-region:
+        description: 'AWS Region for ECR Repository'
+        required: true
+        type: string
+      aws-secret-name:
+        description: 'Name of the secret in AWS Secrets Manager'
+        required: true
+        type: string
+    secrets:
+      AWS_MANAGEMENT_ACCOUNT:
+        description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
+        required: true
+      AWS_TARGET_ACCOUNT:
+        description: 'AWS Account for ECR Repository'
+        required: true
+      EC2_SSH_KEY:
+        description: 'Name of the EC2 SSH Key'
+        required: true
+      EC2_USER:
+        description: 'User for EC2 Instance'
+        required: true
+      EC2_HOST:
+        description: 'Hostname of the EC2 Instance'
+        required: true
+env:
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read # This is required for actions/checkout
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Assume role in target account
+        id: assume-role-target
+        run: |
+          ROLE_ARN="arn:aws:iam::${{ secrets.AWS_TARGET_ACCOUNT }}:role/iac-role"
+          CREDS=$(aws sts assume-role --role-arn $ROLE_ARN --role-session-name GitHubAction --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+          echo "AWS_ACCESS_KEY_ID=$(echo $CREDS | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=$(echo $CREDS | cut -d ' ' -f 2)" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=$(echo $CREDS | cut -d ' ' -f 3)" >> $GITHUB_ENV
+
+      - name: Sts GetCallerIdentity
+        run: |
+          aws sts get-caller-identity
+
+      - name: Retrieve secrets from AWS Secrets Manager
+        run: |
+          for envname in blockscout stats frontend user-ops-indexer; do
+            
+            name=$envname
+            env=./docker-compose/envs/common-${name}.env
+            
+            if [ -f ${env} ]; then
+              cp ${env} ${env}.bak
+            else
+              touch ${env}.bak
+            fi
+            
+            SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/${name} --region ${{ inputs.aws-region }} --query SecretString --output text)
+            echo $SECRET_STRING | jq -r 'to_entries | .[] | "\(.key)=\(.value|tostring)"' > ${env}.temp
+            
+            while IFS='=' read -r key value; do
+            if grep -q "^$key=" ${env}.bak; then
+              sed -i "s|^$key=.*|$key=$value|" ${env}.bak
+            else
+              echo "$key=$value" >> ${env}.bak
+            fi
+            done < ${env}.temp
+            
+            mv ${env}.bak ${env}
+          
+          done
+
+      - name: Retrieve SSL secrets from AWS Secrets Manager
+        run: |
+          mkdir -p ./docker-compose/proxy/certs/
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/nginx --region ${{ inputs.aws-region }} --query SecretString --output text)
+          echo "$SECRET_STRING" | jq -r .ssl_certificate > ./docker-compose/proxy/certs/cloudflare.pem
+          echo "$SECRET_STRING" | jq -r .ssl_key > ./docker-compose/proxy/certs/cloudflare.key
+
+      - name: Set up ssh key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Archive files
+        run: |
+          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C docker-compose .
+
+      - name: Update image in Docker Compose and redeploy
+        run: |
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ inputs.repo-name }}.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            tar -zxvf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz ./
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
+          EOF
