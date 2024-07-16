@@ -100,6 +100,7 @@ jobs:
 
       - name: Retrieve SSL secrets from AWS Secrets Manager
         run: |
+          mkdir -p ./docker-compose/proxy/certs/
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }}/nginx --region ${{ inputs.aws-region }} --query SecretString --output text)
           echo "$SECRET_STRING" > ssl_secrets.json
           cat ssl_secrets.json | jq -r .ssl_certificate > ./docker-compose/proxy/certs/cloudflare.pem
