@@ -48,7 +48,8 @@ env:
   BUCKET_NAME: tn-deployment-file-archive
   SERVICE_NAME: services
   aws-region: us-west-1
-  EC2_USER: ubuntu
+  EC2_USER: ${{secrets.EC2_USER}}
+  EC2_HOST: ${{secrets.EC2_HOST}}
 
 jobs:
   build:
@@ -70,13 +71,18 @@ jobs:
 
 
       - name: Get EC2 details from AWS
+        if: ${{ !env.EC2_HOST }}  
         run: |
           public_ip=$(aws ec2 describe-instances \
             --region ${{ env.aws-region }} \
             --filters "Name=tag:Name,Values=${{ env.SERVICE_NAME }}" "Name=instance-state-name,Values=running" \
             --query "Reservations[*].Instances[*].PublicIpAddress" \
             --output text)
+          
+         
           echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
+
             
       - name: Build code
         run: |
