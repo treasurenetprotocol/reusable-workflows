@@ -46,6 +46,7 @@ on:
 env:
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   BUCKET_NAME: tn-deployment-file-archive
+  SERVICE_NAME: services
 
 jobs:
   build:
@@ -65,6 +66,16 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
 
+      - name: Get EC2 details from AWS
+        id: ec2-params
+        run: |
+          
+          EC2_USER=$(aws ssm get-parameter --name "/service/${{ env.SERVICE_NAME }}/ec2_user" --with-decryption --query "Parameter.Value" --output text)
+          EC2_HOST=$(aws ssm get-parameter --name "/service/${{ env.SERVICE_NAME }}/ec2_host" --with-decryption --query "Parameter.Value" --output text)
+          echo "EC2_USER=${EC2_USER}" >> $GITHUB_ENV
+          echo "EC2_HOST=${EC2_HOST}" >> $GITHUB_ENV
+          echo "::set-output name=ec2_user::${EC2_USER}"
+          echo "::set-output name=ec2_host::${EC2_HOST}"
       - name: Build code
         run: |
           npm install --silent
@@ -89,17 +100,17 @@ jobs:
 
       - name: Download(from AWS S3), extract and replace files
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
           
             aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
             aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
             aws configure set region ${{ inputs.s3-aws-region }}
-            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
           
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            tar -zxvf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-            rm -rf /home/${{ secrets.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
           
           EOF
 
