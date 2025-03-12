@@ -70,10 +70,9 @@ jobs:
 
 
       - name: Get EC2 details from AWS
-        id: ec2-params
         run: |
           public_ip=$(aws ec2 describe-instances \
-            --region ${{ env.us-west-1 }} \
+            --region ${{ env.aws-region }} \
             --filters "Name=tag:Name,Values=${{ env.SERVICE_NAME }}" "Name=instance-state-name,Values=running" \
             --query "Reservations[*].Instances[*].PublicIpAddress" \
             --output text)
