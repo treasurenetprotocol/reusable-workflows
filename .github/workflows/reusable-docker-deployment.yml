@@ -45,6 +45,10 @@ on:
 
 env:
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+  EC2_USER: ${{secrets.EC2_USER}}
+  EC2_HOST: ${{secrets.EC2_HOST}}
+  SERVICE_NAME: services
+  aws-region: us-west-1
 
 # Permission can be added at job level or workflow level
 permissions:
@@ -74,6 +78,19 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=$(echo $CREDS | cut -d ' ' -f 2)" >> $GITHUB_ENV
           echo "AWS_SESSION_TOKEN=$(echo $CREDS | cut -d ' ' -f 3)" >> $GITHUB_ENV
 
+      - name: Get EC2 details from AWS
+        if: ${{ !env.EC2_HOST }}  
+        run: |
+          public_ip=$(aws ec2 describe-instances \
+            --region ${{ env.aws-region }} \
+            --filters "Name=tag:Name,Values=${{ env.SERVICE_NAME }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].PublicIpAddress" \
+            --output text)
+          
+         
+          echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
+
       - name: Sts GetCallerIdentity
         run: |
           aws sts get-caller-identity
@@ -92,13 +109,13 @@ jobs:
 
       - name: Update image in Docker Compose and redeploy
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/${{ inputs.ecr-repo }}.yml
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/${{ inputs.ecr-repo }}.env
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.env
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER  }}@${{ env.EC2_HOST }} << EOF
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
-            mv /home/${{ secrets.EC2_USER }}/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
-            mv /home/${{ secrets.EC2_USER }}/${{ inputs.ecr-repo }}.env ./.env
+            mv /home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+            mv /home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.env ./.env
             sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
             export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
