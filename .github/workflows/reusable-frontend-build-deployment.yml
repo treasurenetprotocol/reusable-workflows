@@ -50,6 +50,7 @@ env:
   aws-region: us-west-1
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
+  NGINX_PATH: /data/nginx
 
 jobs:
   build:
@@ -119,6 +120,19 @@ jobs:
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
             tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+
+            mkdir -p ${{ env.NGINX_PATH }}
+            cp -R ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/nginx ${{ env.NGINX_PATH }}
+            cd ${{ env.NGINX_PATH }}
+            if docker-compose ps | grep -q "Up"; then
+              echo "Docker Compose is running."
+              docker-compose restart
+            else
+              echo "Docker Compose is not running."
+              docker-compose up -d
+            fi
+
+
           
           EOF
 
