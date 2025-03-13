@@ -51,6 +51,8 @@ env:
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
   NGINX_PATH: /data/nginx
+  aws-dev-secret-name: dev/services
+  aws-testnet-secret-name: testnet/services
 
 jobs:
   build:
@@ -120,21 +122,50 @@ jobs:
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
             tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-
             mkdir -p ${{ env.NGINX_PATH }}
             cp -R ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/nginx ${{ env.NGINX_PATH }}
+            
+
+
+          
+          EOF
+
+
+      - name: add nginx cloudflare
+        run: |
+           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
+            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+            aws configure set region ${{ inputs.s3-aws-region }}
+            mkdir -p ${{ env.NGINX_PATH }}/certs
+            if [ -z "${{ env.EC2_HOST }}" ]; then
+            
+              SECRET_ID="${{ env.aws-dev-secret-name }}/nginx"
+            else
+            
+              SECRET_ID="${{ env.aws-testnet-secret-name }}/nginx"
+            fi
+            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
+            echo "\$SECRET_STRING" | jq -r .ssl_certificate > ${{ env.NGINX_PATH }}/certs/cloudflare.pem
+            echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.NGINX_PATH }}/certs/cloudflare.key
+
+           EOF
+      - name: up nginx docker
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
+          aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+            aws configure set region ${{ inputs.s3-aws-region }}
             cd ${{ env.NGINX_PATH }}
-            if docker-compose ps | grep -q "Up"; then
+             if docker-compose ps | grep -q "Up"; then
               echo "Docker Compose is running."
               docker-compose restart
             else
               echo "Docker Compose is not running."
               docker-compose up -d
             fi
-
-
-          
           EOF
+
 
       - name: Purge cloudflare cache
         env:
