@@ -104,7 +104,7 @@ jobs:
           aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
           aws configure set region ${{ inputs.s3-aws-region }}
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
-          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
+          aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
 
       - name: Set up ssh key
         run: |
@@ -129,6 +129,7 @@ jobs:
 
             mkdir -p ${{ env.NGINX_PATH }}
             tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
+            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
           
           EOF
 
