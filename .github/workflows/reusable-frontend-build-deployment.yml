@@ -94,7 +94,9 @@ jobs:
 
       - name: Archive files
         run: |
-          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
+          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist . 
+          tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
+
 
       - name: Upload Archive file to AWS S3
         run: |
@@ -102,6 +104,7 @@ jobs:
           aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
           aws configure set region ${{ inputs.s3-aws-region }}
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
+          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
 
       - name: Set up ssh key
         run: |
@@ -117,16 +120,15 @@ jobs:
             aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
             aws configure set region ${{ inputs.s3-aws-region }}
             aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
           
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
             tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
             rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+
             mkdir -p ${{ env.NGINX_PATH }}
-            cp -R ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/nginx ${{ env.NGINX_PATH }}
-            
-
-
+            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
           
           EOF
 
