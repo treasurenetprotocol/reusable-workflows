@@ -39,7 +39,7 @@ env:
   # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  
+
 jobs:
   build-and-push:
     runs-on: self-hosted
@@ -56,7 +56,7 @@ jobs:
           aws-region: ${{ inputs.ecr-repo-aws-region }}
 
       - name: configure aws credentials
-      if: ${{ inputs.isMainnet }}
+        if: ${{ inputs.isMainnet }}
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
