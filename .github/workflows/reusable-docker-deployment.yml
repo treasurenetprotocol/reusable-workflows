@@ -195,7 +195,7 @@ jobs:
           BASTION="jump-server-us-west-1"
           ssh -o StrictHostKeyChecking=no \
               -i ~/.ssh/tn-mainnet-gha \
-              ec2-user@"$BASTION" << EOF
+              ec2-user@"$BASTION" << 'OUTER_EOF'
             scp -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
                 ${{inputs.composefile-path}} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml

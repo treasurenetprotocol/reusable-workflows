@@ -80,7 +80,7 @@ jobs:
 
 
       - name: Get EC2 details from AWS
-        if: ${{ !env.EC2_HOST }}  
+        if: ${{ !env.EC2_HOST && !inputs.isMainnet}}  
         run: |
           public_ip=$(aws ec2 describe-instances \
             --region ${{ env.aws-region }} \
@@ -88,10 +88,20 @@ jobs:
             --query "Reservations[*].Instances[*].PublicIpAddress" \
             --output text)
           
-         
           echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
           echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
 
+      - name: Get EC2 details from AWS
+        if: ${{ !env.EC2_HOST && inputs.isMainnet}}  
+        run: |
+          public_dns=$(aws ec2 describe-instances \
+            --region ${{ env.aws-region }} \
+            --filters "Name=tag:Name,Values=web-service-1-us-west-1" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].PublicDnsName" \
+            --output text)
+          echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
             
       - name: Build code
         run: |
