@@ -189,6 +189,7 @@ jobs:
                 -i ~/.ssh/tn-mainnet-gha \
                 ${{inputs.composefile-path}} .env \
                 ec2-user@"$BASTION":~/
+
       - name: Deploy and restart nodes in us-west-1
         shell: bash
         run: |
@@ -197,15 +198,15 @@ jobs:
             -i ~/.ssh/tn-mainnet-gha \
             ec2-user@"$BASTION" << 'OUTER_EOF'
           scp -o StrictHostKeyChecking=no \
-            -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+            -i ~/mainnet-nodes-us-west-1.pem \
             ${{ inputs.composefile-path }} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
 
           scp -o StrictHostKeyChecking=no \
-            -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+            -i ~/mainnet-nodes-us-west-1.pem \
             .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/.env
 
           ssh -o StrictHostKeyChecking=no \
-            -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+            -i ~/mainnet-nodes-us-west-1.pem \
             ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
           mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
           cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
