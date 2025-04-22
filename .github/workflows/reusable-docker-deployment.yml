@@ -216,9 +216,9 @@ jobs:
               export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
               export AWS_SESSION_TOKEN=${{env.AWS_SESSION_TOKEN}}
               aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-              docker-compose down
-              docker-compose pull
-              docker-compose up -d
+              docker compose down
+              docker compose pull
+              docker compose up -d
             INNER_EOF
           EOF
 
