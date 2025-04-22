@@ -19,7 +19,10 @@ on:
         description: 'AWS Region for S3 Bucket'
         required: true
         type: string
-
+      isMainnet:
+        description: 'Whether we are deploying to mainnet'
+        required: true
+        type: boolean
     secrets:
       S3_OWNER_ACCESS_KEY_ID:
         description: 'AWS S3 Owner Access Key ID'
@@ -44,6 +47,9 @@ on:
         required: true
 
 env:
+  # AWS Configuration
+  AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
+  AWS_REGION: "us-west-1"
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   BUCKET_NAME: tn-deployment-file-archive
   SERVICE_NAME: services
