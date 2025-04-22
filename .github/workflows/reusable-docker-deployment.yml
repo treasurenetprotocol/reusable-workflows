@@ -180,27 +180,25 @@ jobs:
       - name: Deploy files to bastion hosts
         shell: bash
         run: |
-              # Copy required files to both bastion hosts
-              for REGION in us-west-1; do
-                BASTION="jump-server-$REGION"
-                echo ">>> Deploying files to $BASTION"
-                scp \
-                  -o StrictHostKeyChecking=no \
-                  -o UserKnownHostsFile=/dev/null \
-                  -i ~/.ssh/tn-mainnet-gha \
-                  ${{inputs.composefile-path}} .env \
-                  ec2-user@"$BASTION":~/
-              done
+              # Copy required files to bastion host
+              BASTION="jump-server-us-west-1"
+              echo ">>> Deploying files to $BASTION"
+              scp \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -i ~/.ssh/tn-mainnet-gha \
+                ${{inputs.composefile-path}} .env \
+                ec2-user@"$BASTION":~/
       - name: Deploy and restart nodes in us-west-1
         shell: bash
         run: |
-
+          BASTION="jump-server-us-west-1"
           ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+              -i ~/.ssh/tn-mainnet-gha \
               ec2-user@"$BASTION" << EOF
             scp -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
-                {{inputs.composefile-path}} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
+                ${{inputs.composefile-path}} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
 
             scp -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
