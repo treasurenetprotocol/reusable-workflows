@@ -23,6 +23,10 @@ on:
         description: 'Path to the docker-compose.yml file'
         required: true
         type: string
+      isMainnet:
+        description: 'Whether we are deploying to mainnet'
+        required: true
+        type: boolean
     secrets:
       AWS_MANAGEMENT_ACCOUNT:
         description: 'AWS Account ID for OIDC Integration (AWS CICD Account)'
@@ -44,6 +48,9 @@ on:
         required: true
 
 env:
+  # AWS Configuration
+  AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
+  AWS_REGION: "us-west-1"
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
@@ -57,6 +64,7 @@ permissions:
 
 jobs:
   deploy:
+    if: ${{ !inputs.isMainnet }}
     runs-on: self-hosted
     steps:
       - name: Checkout code
@@ -125,6 +133,102 @@ jobs:
             docker-compose pull
             docker-compose up -d
           EOF
+
+      # [Extremely Important]
+      - name: Remove the cached AWS credentials from the runner
+        run: |
+          rm -rf /home/runner/.docker/config.json
+  deploy_mainnet:
+    if: ${{ inputs.isMainnet }}       
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ env.AWS_REGION }}
+
+
+      - name: Persist AWS creds to GITHUB_ENV
+        run: |
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"       >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"       >> $GITHUB_ENV
+
+      - name: Get EC2 details from AWS
+        if: ${{ !env.EC2_HOST }}  
+        run: |
+          public_dns=$(aws ec2 describe-instances \
+            --region ${{ env.aws-region }} \
+            --filters "Name=tag:Name,Values=web-service-1-us-west-1" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].PublicDnsName" \
+            --output text)
+          echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
+
+
+      - name: Retrieve secrets from AWS Secrets Manager
+        id: retrieve-secrets
+        run: |
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ inputs.aws-secret-name }} --region ${{ inputs.ecr-repo-aws-region }} --query SecretString --output text)
+          echo "${SECRET_STRING}" | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' > .env
+      - name: Deploy files to bastion hosts
+        shell: bash
+        run: |
+              # Copy required files to both bastion hosts
+              for REGION in us-east-1 us-west-1; do
+                BASTION="jump-server-$REGION"
+                echo ">>> Deploying files to $BASTION"
+                scp \
+                  -o StrictHostKeyChecking=no \
+                  -o UserKnownHostsFile=/dev/null \
+                  -i ~/.ssh/tn-mainnet-gha \
+                  ${{inputs.composefile-path}} .env \
+                  ec2-user@"$BASTION":~/
+              done
+      - name: Deploy and restart nodes in us-west-1
+        shell: bash
+        run: |
+          BASTION=jump-server-us-west-1
+          scp -o StrictHostKeyChecking=no \
+              -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+              ${{inputs.composefile-path}} .env \
+              ec2-user@"$BASTION":~/
+
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/mainnet-nodes-us-west-1.pem \
+              ec2-user@"$BASTION" << 'EOF'
+            scp -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                {{inputs.composefile-path}} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
+
+            scp -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/.env
+
+            ssh -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+              mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
+              cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
+              mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+              mv /home/ubuntu/.env ./.env
+              sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
+              export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
+              export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
+              export AWS_SESSION_TOKEN=${{env.AWS_SESSION_TOKEN}}
+              aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+              docker-compose down
+              docker-compose pull
+              docker-compose up -d
+            INNER_EOF
+          EOF
+
 
       # [Extremely Important]
       - name: Remove the cached AWS credentials from the runner
