@@ -57,11 +57,11 @@ jobs:
 
       - name: configure aws credentials
         if: ${{ inputs.isMainnet }}
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_MANAGEMENT_ACCOUNT }}:role/${{ inputs.gha-role-name }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ inputs.ecr-repo-aws-region }}
+          aws-region: ${{ env.AWS_REGION }}
 
 
       - name: Docker build
