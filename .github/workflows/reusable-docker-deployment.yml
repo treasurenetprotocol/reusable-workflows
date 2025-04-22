@@ -196,13 +196,15 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
               -i ~/.ssh/tn-mainnet-gha \
               ec2-user@"$BASTION" << 'OUTER_EOF'
+
             scp -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
-                ${{inputs.composefile-path}} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
+                ${{ inputs.composefile-path }} ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.yml
 
             scp -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
                 .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/.env
+
 
             ssh -o StrictHostKeyChecking=no \
                 -i ~/mainnet-nodes-us-west-1.pem \
@@ -212,15 +214,17 @@ jobs:
               mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
               mv /home/ubuntu/.env ./.env
               sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
-              export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
-              export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
-              export AWS_SESSION_TOKEN=${{env.AWS_SESSION_TOKEN}}
-              aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+              export AWS_ACCESS_KEY_ID=${{ env.AWS_ACCESS_KEY_ID }}
+              export AWS_SECRET_ACCESS_KEY=${{ env.AWS_SECRET_ACCESS_KEY }}
+              export AWS_SESSION_TOKEN=${{ env.AWS_SESSION_TOKEN }}
+              aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
+                | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
               docker compose down
               docker compose pull
               docker compose up -d
             INNER_EOF
-          EOF
+          OUTER_EOF
+
 
 
       # [Extremely Important]
