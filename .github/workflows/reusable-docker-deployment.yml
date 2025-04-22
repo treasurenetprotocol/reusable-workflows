@@ -51,7 +51,7 @@ env:
   # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+  AWS_DEFAULT_DEPLOYMENT_PATH: /home/${{secrets.EC2_USER}}/treasurenet
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
   SERVICE_NAME: services
