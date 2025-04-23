@@ -88,6 +88,10 @@ jobs:
       - name: Set EC2_HOST from secret (dev)
         if: ${{ !inputs.isMainnet && env.EC2_HOST_SECRET }}
         run: echo "EC2_HOST=${{ env.EC2_HOST_SECRET }}" >> $GITHUB_ENV
+      
+      - name: Set EC2_USER from secret (dev)
+        if: ${{ !inputs.isMainnet && env.EC2_USER_SECRET }}
+        run: echo "EC2_USER=${{ env.EC2_USER_SECRET }}" >> $GITHUB_ENV
 
       - name: Discover EC2_HOST via AWS API (testnet)
         if: ${{ !inputs.isMainnet && !env.EC2_HOST_SECRET }}
