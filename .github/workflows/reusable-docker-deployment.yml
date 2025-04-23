@@ -43,6 +43,7 @@ on:
 
 
 env:
+  AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: us-west-1
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   SERVICE_NAME: services
