@@ -196,6 +196,10 @@ jobs:
       - name: "Deploy to Dev/Test EC2"
         if: ${{ !inputs.isMainnet }}
         run: |
+          # If the secret EC2_HOST is non-empty, use it
+          if [ -n "${{ secrets.EC2_HOST }}" ]; then
+            EC2_HOST="${{ secrets.EC2_HOST }}"
+          fi
           # 1) Set local variables for path & bucket
           dest="/data/treasurenet"
           bucket="tn-deployment-file-archive"
