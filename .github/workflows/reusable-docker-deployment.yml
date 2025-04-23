@@ -100,7 +100,7 @@ jobs:
             --query "Reservations[*].Instances[*].PublicIpAddress" \
             --output text)
           echo "EC2_HOST=$public_ip"       >> $GITHUB_ENV
-          echo "EC2_USER=${{ env.EC2_USER_SECRET }}" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV
 
       - name: Retrieve application secrets
         run: |
