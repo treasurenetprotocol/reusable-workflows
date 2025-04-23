@@ -263,12 +263,12 @@ jobs:
                 ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
 
             cd ${{ env.MAINNET_NGINX_PATH }}
-             if docker-compose ps | grep -q "Up"; then
+             if docker compose ps | grep -q "Up"; then
               echo "Docker Compose is running."
-              docker-compose restart
+              docker compose restart
             else
               echo "Docker Compose is not running."
-              docker-compose up -d
+              docker compose up -d
             fi
           INNER_EOF
           OUTER_EOF
