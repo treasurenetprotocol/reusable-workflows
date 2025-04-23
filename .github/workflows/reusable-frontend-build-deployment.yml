@@ -199,8 +199,8 @@ jobs:
                 aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
                 mkdir -p ${{ env.MAINNET_NGINX_PATH }}/
                 tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
-              INNER
-            OUTER
+          INNER
+          OUTER
           fi
 
       - name: "Start Nginx Container"
