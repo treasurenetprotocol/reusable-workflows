@@ -50,7 +50,7 @@ env:
   # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+  AWS_DEFAULT_DEPLOYMENT_PATH: /home/${{secrets.EC2_USER}}/treasurenet
   BUCKET_NAME: tn-deployment-file-archive
   SERVICE_NAME: services
   aws-region: us-west-1
