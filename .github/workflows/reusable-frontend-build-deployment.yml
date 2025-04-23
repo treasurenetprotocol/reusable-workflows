@@ -94,7 +94,24 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
-
+      - name: "Fetch Nginx Certificates"
+        run: |
+          # Determine secret prefix based on environment
+          if [ "${{ inputs.isMainnet }}" = "true" ]; then
+            prefix=${{ env.MAINNET_SECRET_PREFIX }}
+          elif [ -z "$EC2_HOST" ]; then
+            prefix=${{ env.DEV_SECRET_PREFIX }}
+          else
+            prefix=${{ env.TESTNET_SECRET_PREFIX }}
+          fi
+          # Retrieve and decode
+          secret=$(aws secretsmanager get-secret-value \
+            --secret-id "${prefix}/nginx" \
+            --region ${{ inputs.s3-aws-region }} \
+            --query SecretString --output text)
+          echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
+          echo "$secret" | jq -r .ssl_key         > cloudflare.key
+          
       - name: "Discover EC2 Instance"
         run: |
           # Only query EC2 if EC2_HOST not already set
@@ -132,23 +149,7 @@ jobs:
           tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
-      - name: "Fetch Nginx Certificates"
-        run: |
-          # Determine secret prefix based on environment
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
-            prefix=${{ env.MAINNET_SECRET_PREFIX }}
-          elif [ -z "$EC2_HOST" ]; then
-            prefix=${{ env.DEV_SECRET_PREFIX }}
-          else
-            prefix=${{ env.TESTNET_SECRET_PREFIX }}
-          fi
-          # Retrieve and decode
-          secret=$(aws secretsmanager get-secret-value \
-            --secret-id "${prefix}/nginx" \
-            --region ${{ inputs.s3-aws-region }} \
-            --query SecretString --output text)
-          echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
-          echo "$secret" | jq -r .ssl_key         > cloudflare.key
+
 
       - name: "Configure SSH Key"
         run: |
@@ -171,33 +172,60 @@ jobs:
 
       - name: "Deploy to EC2"
         run: |
-          # Determine destination path and bucket
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
-            dest_path=${{ env.MAINNET_DEPLOYMENT_PATH }}
-            bucket=${{ env.MAINNET_BUCKET_NAME }}
+          # Dev/Test: direct SSH
+          if [ "${{ inputs.isMainnet }}" != "true" ]; then
+            dest=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}
+            bkt=${{ env.BUCKET_NAME }}
+            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
+              mkdir -p ${{ env.NGINX_PATH }}/certs
+              aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem ${{ env.NGINX_PATH }}/certs/cloudflare.pem
+              aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key ${{ env.NGINX_PATH }}/certs/cloudflare.key
+              aws s3 cp s3://$bkt/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
+              tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest
+              aws s3 cp s3://$bkt/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
+              tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
+            EOF
           else
-            dest_path=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}
-            bucket=${{ env.BUCKET_NAME }}
+            # Mainnet: via bastion
+            bastion=jump-server-us-west-1
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
+              ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
+                mkdir -p ${{ env.MAINNET_NGINX_PATH }}/certs
+                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
+                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
+                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
+                mkdir -p ${{ env.MAINNET_DEPLOYMENT_PATH }}/
+                tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_DEPLOYMENT_PATH }}
+                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
+                mkdir -p ${{ env.MAINNET_NGINX_PATH }}/
+                tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
+              INNER
+            OUTER
           fi
-          # Remote commands to download and unpack
-          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
-            aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
-            tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest_path
-            aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
-            tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C $([[ "${{ inputs.isMainnet }}" = "true" ]] && echo ${{ env.MAINNET_NGINX_PATH }} || echo ${{ env.NGINX_PATH }})
-          EOF
 
       - name: "Start Nginx Container"
         run: |
-          # Start or restart container
-          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
-            cd $([[ "${{ inputs.isMainnet }}" = "true" ]] && echo ${{ env.MAINNET_NGINX_PATH }} || echo ${{ env.NGINX_PATH }})
-            if docker-compose ps | grep -q Up; then
-              docker-compose restart
-            else
-              docker-compose up -d
-            fi
-          EOF
+          if [ "${{ inputs.isMainnet }}" = "true" ]; then
+            # Mainnet: use two-hop SSH to update compose and restart
+            bastion=jump-server-us-west-1
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
+              ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
+                cd ${{ env.MAINNET_NGINX_PATH }}
+                # Patch volume paths in compose file
+                sed -i \
+                  -e 's#/data/nginx#/home/ubuntu/nginx#g' \
+                  -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
+                  docker-compose.yaml
+                if docker compose ps | grep -q Up; then docker compose restart; else docker compose up -d; fi
+              INNER
+            OUTER
+          else
+            # Dev/Test: single SSH restart
+            ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+              cd ${{ env.NGINX_PATH }}
+              if docker-compose ps | grep -q Up; then docker-compose restart; else docker-compose up -d; fi
+            EOF
+          fi
 
       - name: "Purge Cloudflare Cache"
         run: |
