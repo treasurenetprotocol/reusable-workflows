@@ -68,7 +68,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
-          aws-region: ${{ inputs.s3-aws-region }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: "Configure AWS Credentials (Mainnet)"
         if: ${{ inputs.isMainnet }}
