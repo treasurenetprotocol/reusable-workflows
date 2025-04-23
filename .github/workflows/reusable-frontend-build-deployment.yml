@@ -111,7 +111,7 @@ jobs:
             --query SecretString --output text)
           echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
           echo "$secret" | jq -r .ssl_key         > cloudflare.key
-          
+
       - name: "Discover EC2 Instance"
         run: |
           # Only query EC2 if EC2_HOST not already set
@@ -188,7 +188,7 @@ jobs:
           else
             # Mainnet: via bastion
             bastion=jump-server-us-west-1
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion << 'OUTER'
               ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
                 mkdir -p ${{ env.MAINNET_NGINX_PATH }}/certs
                 aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
