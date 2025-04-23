@@ -184,7 +184,7 @@ jobs:
               tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest
               aws s3 cp s3://$bkt/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
               tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
-            EOF
+          EOF
           else
             # Mainnet: via bastion
             bastion=jump-server-us-west-1
