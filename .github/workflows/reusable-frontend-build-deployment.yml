@@ -135,8 +135,8 @@ jobs:
           SECRET_STRING=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ID" \
             --region ${{ env.aws-region }} \
-            --query SecretString --output json)
-          # 用 jq 原样解码换行
+            --query SecretString --output text)
+
           echo "$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
           echo "$SECRET_STRING" | jq -r .ssl_key         > cloudflare.key
 
@@ -237,7 +237,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
               -i ~/mainnet-nodes-us-west-1.pem \
               ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-              
+
                aws s3api get-object \
                   --bucket ${{ env.MAINNET_BUCKET_NAME }} \
                   --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key \
