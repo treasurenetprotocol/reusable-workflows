@@ -50,15 +50,19 @@ env:
   # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  AWS_DEFAULT_DEPLOYMENT_PATH: /home/${{secrets.EC2_USER}}/treasurenet
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
+  MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH: /home/ubuntu/treasurenet
   BUCKET_NAME: tn-deployment-file-archive
+  MAINNET_BUCKET_NAME: tn-mainnet-deployment-file-archive
   SERVICE_NAME: services
   aws-region: us-west-1
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
   NGINX_PATH: /data/nginx
+  MAINNET_NGINX_PATH: /home/ubuntu/nginx
   aws-dev-secret-name: dev/services
   aws-testnet-secret-name: testnet/services
+  aws-mainnet-secret-name: mainnet/services
 
 jobs:
   build:
@@ -91,6 +95,14 @@ jobs:
           echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
           echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
 
+      - name: Configure AWS credentials
+        if: ${{ !env.EC2_HOST && inputs.isMainnet}}  
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Get EC2 details from AWS
         if: ${{ !env.EC2_HOST && inputs.isMainnet}}  
         run: |
@@ -115,12 +127,22 @@ jobs:
 
 
       - name: Upload Archive file to AWS S3
+        shell: bash
         run: |
-          aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-          aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-          aws configure set region ${{ inputs.s3-aws-region }}
-          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
-          aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
+          if [ "${{ inputs.isMainnet }}" != "true" ]; then
+            aws configure set aws_access_key_id     ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+            aws configure set region                ${{ inputs.s3-aws-region }}
+            BUCKET=${{ env.BUCKET_NAME }}
+          else
+            BUCKET=${{ env.MAINNET_BUCKET_NAME }}
+          fi
+
+          aws s3 cp ./${{ inputs.repo-name }}.tar.gz \
+            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
+
+          aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz \
+            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
 
       - name: Set up ssh key
         run: |
@@ -129,6 +151,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa  
 
       - name: Download(from AWS S3), extract and replace files
+        if: ${{ !inputs.isMainnet}}  
         run: |
           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
           
@@ -149,8 +172,34 @@ jobs:
           
           EOF
 
+      - name: Download(from AWS S3), extract and replace files
+        if: ${{ inputs.isMainnet}}  
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
+           aws s3api get-object \
+            --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+            --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz \
+            /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+
+            aws s3api get-object \
+            --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+            --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz \
+            /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+
+            mkdir -p ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
+            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+
+            mkdir -p ${{ env.MAINNET_NGINX_PATH }}
+            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
+            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+          
+          EOF
+
 
       - name: add nginx cloudflare
+        if: ${{ !inputs.isMainnet }}
         run: |
            ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
             aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
@@ -169,13 +218,43 @@ jobs:
             echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.NGINX_PATH }}/certs/cloudflare.key
 
            EOF
+
+      - name: add nginx cloudflare
+        if: ${{ inputs.isMainnet }}
+        run: |
+           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
+           
+           
+              SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
+            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
+            echo "\$SECRET_STRING" | jq -r .ssl_certificate > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
+            echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
+
+           EOF
+
       - name: up nginx docker
+        if: ${{ !inputs.isMainnet }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
           aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
             aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
             aws configure set region ${{ inputs.s3-aws-region }}
             cd ${{ env.NGINX_PATH }}
+             if docker-compose ps | grep -q "Up"; then
+              echo "Docker Compose is running."
+              docker-compose restart
+            else
+              echo "Docker Compose is not running."
+              docker-compose up -d
+            fi
+          EOF
+
+      - name: up nginx docker
+        if: ${{ inputs.isMainnet }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
+         
+            cd ${{ env.MAINNET_NGINX_PATH }}
              if docker-compose ps | grep -q "Up"; then
               echo "Docker Compose is running."
               docker-compose restart
