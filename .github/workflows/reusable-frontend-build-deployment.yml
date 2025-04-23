@@ -229,7 +229,7 @@ jobs:
         run: |
           bastion="jump-server-us-west-1"
           # First hop: to Bastion
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion <<OUTER
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion <<OUTER
           # Second hop: to Mainnet node
           ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
           cd ${{ env.MAINNET_NGINX_PATH }}
