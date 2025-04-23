@@ -51,7 +51,7 @@ env:
   # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  AWS_DEFAULT_DEPLOYMENT_PATH: /home/${{secrets.EC2_USER}}/treasurenet
+  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   EC2_USER: ${{secrets.EC2_USER}}
   EC2_HOST: ${{secrets.EC2_HOST}}
   SERVICE_NAME: services
@@ -208,9 +208,9 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
             ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-          mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
-          cd ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
-          mv /home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+          mkdir -p /home/ubuntu/${{ inputs.ecr-repo }}
+          cd /home/ubuntu/${{ inputs.ecr-repo }}
+          mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
           mv /home/ubuntu/.env ./.env
           sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
           aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
