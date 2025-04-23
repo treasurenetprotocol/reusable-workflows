@@ -170,38 +170,47 @@ jobs:
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
           aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
 
-      - name: "Deploy to EC2"
+      - name: "Deploy to Dev/Test EC2"
+        if: ${{ !inputs.isMainnet }}
         run: |
-          # Dev/Test: direct SSH
-          if [ "${{ inputs.isMainnet }}" != "true" ]; then
-            dest=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}
-            bkt=${{ env.BUCKET_NAME }}
-            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
-              mkdir -p ${{ env.NGINX_PATH }}/certs
-              aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem ${{ env.NGINX_PATH }}/certs/cloudflare.pem
-              aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key ${{ env.NGINX_PATH }}/certs/cloudflare.key
-              aws s3 cp s3://$bkt/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
-              tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest
-              aws s3 cp s3://$bkt/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
-              tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
+          # 1) Set local variables for path & bucket
+          dest="/data/treasurenet"
+          bucket="tn-deployment-file-archive"
+
+          # 2) Copy and extract via a single SSH hop
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} <<EOF
+          mkdir -p /data/nginx/certs
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem /data/nginx/certs/cloudflare.pem
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
+
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
+          tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest
+
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
+          tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx
           EOF
-          else
-            # Mainnet: via bastion
-            bastion=jump-server-us-west-1
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion << 'OUTER'
-              ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
-                mkdir -p ${{ env.MAINNET_NGINX_PATH }}/certs
-                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
-                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
-                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
-                mkdir -p ${{ env.MAINNET_DEPLOYMENT_PATH }}/
-                tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_DEPLOYMENT_PATH }}
-                aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
-                mkdir -p ${{ env.MAINNET_NGINX_PATH }}/
-                tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
+
+      - name: "Deploy to Mainnet EC2 via Bastion"
+        if: ${{ inputs.isMainnet }}
+        run: |
+          bastion="jump-server-us-west-1"
+
+          # SSH into bastion, then into target host, and unpack
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion <<OUTER
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          mkdir -p /home/ubuntu/nginx/certs
+          aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem /home/ubuntu/nginx/certs/cloudflare.pem
+          aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
+
+          aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
+          mkdir -p /home/ubuntu/treasurenet
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C /home/ubuntu/treasurenet
+
+          aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
+          mkdir -p /home/ubuntu/nginx
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C /home/ubuntu/nginx
           INNER
           OUTER
-          fi
 
       - name: "Start Nginx Container"
         run: |
