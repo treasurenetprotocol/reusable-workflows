@@ -148,19 +148,19 @@ jobs:
             docker-compose up -d
           EOF
 
-      # ——— MAINNET: prepare bastion SSH key ———
-      - name: Prepare SSH for mainnet bastion
-        if: ${{ inputs.isMainnet }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/bastion_id_rsa
-          chmod 600 ~/.ssh/bastion_id_rsa
+      # # ——— MAINNET: prepare bastion SSH key ———
+      # - name: Prepare SSH for mainnet bastion
+      #   if: ${{ inputs.isMainnet }}
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/bastion_id_rsa
+      #     chmod 600 ~/.ssh/bastion_id_rsa
 
       - name: Upload files to bastion host (mainnet)
         if: ${{ inputs.isMainnet }}
         run: |
           scp -o StrictHostKeyChecking=no \
-            -i ~/.ssh/bastion_id_rsa \
+            -i ~/.ssh/tn-mainnet-gha \
             ${{ inputs.composefile-path }} .env \
             ec2-user@$jump-server-us-west-1:~/
 
@@ -168,7 +168,7 @@ jobs:
         if: ${{ inputs.isMainnet }}
         run: |
           ssh -o StrictHostKeyChecking=no \
-            -i ~/.ssh/bastion_id_rsa \
+            -i ~/.ssh/tn-mainnet-gha \
             ec2-user@$jump-server-us-west-1 << 'OUTER_EOF'
             # copy compose + env into target instance
           scp -o StrictHostKeyChecking=no \
