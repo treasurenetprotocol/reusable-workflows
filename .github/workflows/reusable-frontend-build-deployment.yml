@@ -129,6 +129,16 @@ jobs:
           tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist . 
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
+      - name: Retrieve nginx certs from Secrets Manager
+        run: |
+          SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
+          SECRET_STRING=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ID" \
+            --region ${{ env.aws-region }} \
+            --query SecretString --output json)
+          # 用 jq 原样解码换行
+          echo "$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
+          echo "$SECRET_STRING" | jq -r .ssl_key         > cloudflare.key
 
       - name: Upload Archive file to AWS S3
         shell: bash
@@ -140,7 +150,13 @@ jobs:
             BUCKET=${{ env.BUCKET_NAME }}
           else
             BUCKET=${{ env.MAINNET_BUCKET_NAME }}
+            
           fi
+          aws s3 cp ./cloudflare.pem \
+            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem
+
+          aws s3 cp ./cloudflare.key \
+            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
 
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz \
             s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
@@ -210,6 +226,7 @@ jobs:
           OUTER_EOF
           
 
+          
       - name: add nginx cloudflare
         if: ${{ inputs.isMainnet }}
         run: |
@@ -220,15 +237,17 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
               -i ~/mainnet-nodes-us-west-1.pem \
               ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-          SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
-          SECRET_STRING=$(aws secretsmanager get-secret-value \
-            --secret-id "$SECRET_ID" \
-            --region ${{ env.aws-region }} \
-            --query SecretString --output text)
-          echo "$SECRET_STRING" | jq -r .ssl_certificate \
-            > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
-          echo "$SECRET_STRING" | jq -r .ssl_key \
-            > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
+              
+               aws s3api get-object \
+                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key \
+                  /home/${{ env.EC2_USER }}/nginx/cloudflare.key
+
+               aws s3api get-object \
+                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem \
+                  /home/${{ env.EC2_USER }}/nginx/cloudflare.pem
+
           INNER_EOF
           OUTER_EOF
 
