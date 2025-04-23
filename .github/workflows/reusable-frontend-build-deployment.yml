@@ -196,9 +196,9 @@ jobs:
       - name: "Deploy to Dev/Test EC2"
         if: ${{ !inputs.isMainnet }}
         run: |
-          # If the secret EC2_HOST is non-empty, use it
+          # If secrets.EC2_HOST is set, write it into GITHUB_ENV so later steps see it
           if [ -n "${{ secrets.EC2_HOST }}" ]; then
-            EC2_HOST="${{ secrets.EC2_HOST }}"
+            echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
           fi
           # 1) Set local variables for path & bucket
           dest="/data/treasurenet"
