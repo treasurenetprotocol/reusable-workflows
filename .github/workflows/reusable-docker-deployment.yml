@@ -123,9 +123,8 @@ jobs:
       - name: Deploy to dev/testnet
         if: ${{ !inputs.isMainnet }}
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            ${{ inputs.composefile-path }} .env \
-            ${{ env.EC2_USER_SECRET }}@${{ env.EC2_HOST }}:~/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.env
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             ${{ env.EC2_USER_SECRET }}@${{ env.EC2_HOST }} << 'EOF'
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
