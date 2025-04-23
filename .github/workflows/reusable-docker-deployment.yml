@@ -3,16 +3,16 @@ name: Reusable workflow to deploy Docker image on AWS EC2 instance
 on:
   workflow_call:
     inputs:
-      isMainnet:
-        description: 'Whether this deployment is for mainnet'
+      gha-role-name:
+        description: 'Name of the IAM Role to assume in the AWS Management Account'
         required: true
-        type: boolean
+        type: string
       ecr-repo:
-        description: 'Name of the ECR repository'
+        description: 'name of the ECR repository'
         required: true
         type: string
       ecr-repo-aws-region:
-        description: 'AWS Region of the ECR repository'
+        description: 'AWS Region for ECR Repository'
         required: true
         type: string
       aws-secret-name:
@@ -23,14 +23,10 @@ on:
         description: 'Path to the docker-compose.yml file'
         required: true
         type: string
-      role-arn-dev-testnet:
-        description: 'ARN of the IAM Role to assume for dev and testnet'
+      isMainnet:
+        description: 'Whether we are deploying to mainnet'
         required: true
-        type: string
-      role-arn-mainnet:
-        description: 'ARN of the IAM Role to assume for mainnet'
-        required: true
-        type: string
+        type: boolean
     secrets:
       EC2_SSH_KEY:
         description: 'Private SSH key for dev/testnet EC2 instances'
