@@ -214,20 +214,24 @@ jobs:
         if: ${{ inputs.isMainnet }}
         run: |
           BASTION="jump-server-us-west-1"
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/.ssh/tn-mainnet-gha \
-                ec2-user@"$BASTION" << 'OUTER_EOF'
-          
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/mainnet-nodes-us-west-1.pem \
-                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-           
-              SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
-            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
-            echo "\$SECRET_STRING" | jq -r .ssl_certificate > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
-            echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/tn-mainnet-gha \
+              ec2-user@"$BASTION" << 'OUTER_EOF'
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/mainnet-nodes-us-west-1.pem \
+              ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+          SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
+          SECRET_STRING=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ID" \
+            --region ${{ env.aws-region }} \
+            --query SecretString --output text)
+          echo "$SECRET_STRING" | jq -r .ssl_certificate \
+            > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
+          echo "$SECRET_STRING" | jq -r .ssl_key \
+            > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
           INNER_EOF
           OUTER_EOF
+
 
       - name: up nginx docker
         if: ${{ !inputs.isMainnet }}
