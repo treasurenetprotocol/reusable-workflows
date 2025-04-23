@@ -192,14 +192,17 @@ jobs:
           aws s3 cp cloudflare.key  s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
           aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
-
-      - name: "Deploy to Dev/Test EC2"
-        if: ${{ !inputs.isMainnet }}
+          
+      - name: “Override EC2_HOST from Secret if present”
         run: |
           # If secrets.EC2_HOST is set, write it into GITHUB_ENV so later steps see it
           if [ -n "${{ secrets.EC2_HOST }}" ]; then
             echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
           fi
+
+      - name: "Deploy to Dev/Test EC2"
+        if: ${{ !inputs.isMainnet }}
+        run: |
           # 1) Set local variables for path & bucket
           dest="/data/treasurenet"
           bucket="tn-deployment-file-archive"
