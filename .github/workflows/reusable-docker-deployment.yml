@@ -133,8 +133,8 @@ jobs:
             ${{ env.EC2_USER  }}@${{ env.EC2_HOST }} << 'EOF'
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
-            mv ~/$(basename ${{ inputs.composefile-path }}) ./docker-compose.yml
-            mv ~/.env              ./.env
+            mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+            mv /home/ubuntu/.env ./.env
             sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
               | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
