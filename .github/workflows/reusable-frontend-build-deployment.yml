@@ -96,7 +96,7 @@ jobs:
           echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
 
       - name: Configure AWS credentials
-        if: ${{ !env.EC2_HOST && inputs.isMainnet}}  
+        if: ${{ inputs.isMainnet}}  
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
