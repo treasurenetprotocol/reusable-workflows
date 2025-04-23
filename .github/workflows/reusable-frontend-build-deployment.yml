@@ -212,29 +212,41 @@ jobs:
           INNER
           OUTER
 
-      - name: "Start Nginx Container"
+      - name: "Restart Nginx (Dev/Test)"
+        if: ${{ !inputs.isMainnet }}
         run: |
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
-            # Mainnet: use two-hop SSH to update compose and restart
-            bastion=jump-server-us-west-1
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
-              ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
-                cd ${{ env.MAINNET_NGINX_PATH }}
-                # Patch volume paths in compose file
-                sed -i \
-                  -e 's#/data/nginx#/home/ubuntu/nginx#g' \
-                  -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
-                  docker-compose.yaml
-                if docker compose ps | grep -q Up; then docker compose restart; else docker compose up -d; fi
-              INNER
-            OUTER
+          ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST <<EOF
+          cd ${{ env.NGINX_PATH }}
+          if docker-compose ps | grep -q Up; then
+            docker-compose restart
           else
-            # Dev/Test: single SSH restart
-            ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
-              cd ${{ env.NGINX_PATH }}
-              if docker-compose ps | grep -q Up; then docker-compose restart; else docker-compose up -d; fi
-            EOF
+            docker-compose up -d
           fi
+          EOF
+
+      - name: "Restart Nginx (Mainnet)"
+        if: ${{ inputs.isMainnet }}
+        run: |
+          bastion="jump-server-us-west-1"
+          # First hop: to Bastion
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion <<OUTER
+          # Second hop: to Mainnet node
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          cd ${{ env.MAINNET_NGINX_PATH }}
+          # Patch compose paths
+          sed -i \
+            -e 's#/data/nginx#/home/ubuntu/nginx#g' \
+            -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
+            docker-compose.yaml
+          # Restart or start
+          if docker compose ps | grep -q Up; then
+            docker compose restart
+          else
+            docker compose up -d
+          fi
+          INNER
+          OUTER
+
 
       - name: "Purge Cloudflare Cache"
         run: |
