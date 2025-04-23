@@ -97,24 +97,30 @@ jobs:
 
       - name: "Discover EC2 Instance"
         run: |
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
-            # Query mainnet EC2 by specific tag
-            public_dns=$(aws ec2 describe-instances \
-              --region ${{ env.AWS_REGION }} \
-              --filters "Name=tag:Name,Values=web-service-1-us-west-1" "Name=instance-state-name,Values=running" \
-              --query "Reservations[].Instances[].PublicDnsName" \
-              --output text)
-            echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
-          else
-            # Query dev/test EC2 by general tag
-            public_ip=$(aws ec2 describe-instances \
-              --region ${{ inputs.s3-aws-region }} \
-              --filters "Name=tag:Name,Values=${{ env.SERVICE_TAG }}" "Name=instance-state-name,Values=running" \
-              --query "Reservations[].Instances[].PublicIpAddress" \
-              --output text)
-            echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
+          # Only query EC2 if EC2_HOST not already set
+          if [ -z "${EC2_HOST}" ]; then
+            if [ "${{ inputs.isMainnet }}" = "true" ]; then
+              # Query mainnet EC2 by specific tag
+              public_dns=$(aws ec2 describe-instances \
+                --region ${{ env.AWS_REGION }} \
+                --filters "Name=tag:Name,Values=web-service-1-us-west-1" "Name=instance-state-name,Values=running" \
+                --query "Reservations[].Instances[].PublicDnsName" \
+                --output text)
+              echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
+            else
+              # Query dev/test EC2 by general tag
+              public_ip=$(aws ec2 describe-instances \
+                --region ${{ inputs.s3-aws-region }} \
+                --filters "Name=tag:Name,Values=${{ env.SERVICE_TAG }}" "Name=instance-state-name,Values=running" \
+                --query "Reservations[].Instances[].PublicIpAddress" \
+                --output text)
+              echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
+            fi
           fi
-          echo "EC2_USER=ubuntu" >> $GITHUB_ENV
+          # Ensure EC2_USER is set
+          if [ -z "${EC2_USER}" ]; then
+            echo "EC2_USER=ubuntu" >> $GITHUB_ENV
+          fi
 
       - name: "Install Dependencies and Build"
         run: |
