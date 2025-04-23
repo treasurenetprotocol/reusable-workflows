@@ -67,7 +67,7 @@ env:
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read # This is required for actions/checkout
-  
+
 jobs:
   build:
     runs-on: self-hosted
@@ -179,62 +179,55 @@ jobs:
       - name: Download(from AWS S3), extract and replace files
         if: ${{ inputs.isMainnet}}  
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
-           aws s3api get-object \
-            --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-            --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz \
-            /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-
-            aws s3api get-object \
-            --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-            --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz \
-            /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-
-            mkdir -p ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-            rm -rf ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-
-            mkdir -p ${{ env.MAINNET_NGINX_PATH }}
-            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
-            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+          BASTION="jump-server-us-west-1"
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/.ssh/tn-mainnet-gha \
+                ec2-user@"$BASTION" << 'OUTER_EOF'
           
-          EOF
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+                  aws s3api get-object \
+                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz \
+                  /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
+                  aws s3api get-object \
+                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
+                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz \
+                  /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
 
-      - name: add nginx cloudflare
-        if: ${{ !inputs.isMainnet }}
-        run: |
-           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
-            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ inputs.s3-aws-region }}
-            mkdir -p ${{ env.NGINX_PATH }}/certs
-            if [ -z "${{ env.EC2_HOST }}" ]; then
-            
-              SECRET_ID="${{ env.aws-dev-secret-name }}/nginx"
-            else
-            
-              SECRET_ID="${{ env.aws-testnet-secret-name }}/nginx"
-            fi
-            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
-            echo "\$SECRET_STRING" | jq -r .ssl_certificate > ${{ env.NGINX_PATH }}/certs/cloudflare.pem
-            echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.NGINX_PATH }}/certs/cloudflare.key
+                  mkdir -p ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+                  rm -rf ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
+                  tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+                  rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
-           EOF
+                  mkdir -p ${{ env.MAINNET_NGINX_PATH }}
+                  tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
+                  rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+                
+          INNER_EOF
+          OUTER_EOF
+          
 
       - name: add nginx cloudflare
         if: ${{ inputs.isMainnet }}
         run: |
-           ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
-           
+          BASTION="jump-server-us-west-1"
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/.ssh/tn-mainnet-gha \
+                ec2-user@"$BASTION" << 'OUTER_EOF'
+          
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
            
               SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
             SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
             echo "\$SECRET_STRING" | jq -r .ssl_certificate > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.pem
             echo "\$SECRET_STRING" | jq -r .ssl_key > ${{ env.MAINNET_NGINX_PATH }}/certs/cloudflare.key
-
-           EOF
+          INNER_EOF
+          OUTER_EOF
 
       - name: up nginx docker
         if: ${{ !inputs.isMainnet }}
@@ -256,8 +249,15 @@ jobs:
       - name: up nginx docker
         if: ${{ inputs.isMainnet }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
-         
+          BASTION="jump-server-us-west-1"
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/.ssh/tn-mainnet-gha \
+                ec2-user@"$BASTION" << 'OUTER_EOF'
+          
+              ssh -o StrictHostKeyChecking=no \
+                -i ~/mainnet-nodes-us-west-1.pem \
+                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+
             cd ${{ env.MAINNET_NGINX_PATH }}
              if docker-compose ps | grep -q "Up"; then
               echo "Docker Compose is running."
@@ -266,7 +266,8 @@ jobs:
               echo "Docker Compose is not running."
               docker-compose up -d
             fi
-          EOF
+          INNER_EOF
+          OUTER_EOF
 
 
       - name: Purge cloudflare cache
