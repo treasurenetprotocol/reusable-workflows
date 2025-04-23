@@ -99,7 +99,7 @@ jobs:
           # Determine secret prefix based on environment
           if [ "${{ inputs.isMainnet }}" = "true" ]; then
             prefix=${{ env.MAINNET_SECRET_PREFIX }}
-          elif [ -z "$EC2_HOST" ]; then
+          elif [ -z "${{ secrets.EC2_HOST }}" ]; then
             prefix=${{ env.DEV_SECRET_PREFIX }}
           else
             prefix=${{ env.TESTNET_SECRET_PREFIX }}
@@ -118,7 +118,7 @@ jobs:
           echo "DEBUG: Before detection, EC2_HOST='${EC2_HOST}'"
 
           # Only query AWS if EC2_HOST is not already defined
-          if [ -z "${EC2_HOST}" ]; then
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
             echo "DEBUG: EC2_HOST is empty, querying AWS EC2..."
 
             if [ "${{ inputs.isMainnet }}" = "true" ]; then
