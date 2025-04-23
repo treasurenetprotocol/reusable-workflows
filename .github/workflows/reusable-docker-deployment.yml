@@ -64,6 +64,14 @@ env:
   AWS_REGION: us-west-1
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   SERVICE_NAME: services
+  EC2_HOST_SECRET: ${{ secrets.EC2_HOST }}
+  EC2_USER_SECRET: ${{ secrets.EC2_USER }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  BASTION_SSH_KEY: ${{ secrets.BASTION_SSH_KEY }}
+  MAINNET_NODE_SSH_KEY: ${{ secrets.MAINNET_NODE_SSH_KEY }}
+  BASTION_USER: ${{ secrets.BASTION_USER }}
+  BASTION_HOST: ${{ secrets.BASTION_HOST }}
+  MAINNET_NODE_USER: ${{ secrets.MAINNET_NODE_USER }}
 
 permissions:
   id-token: write       # needed for OIDC federation
@@ -100,11 +108,11 @@ jobs:
 
       # ——— DEV / TESTNET: set or discover EC2_HOST ———
       - name: Set EC2_HOST from secret (dev)
-        if: ${{ !inputs.isMainnet && secrets.EC2_HOST }}
-        run: echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
+        if: ${{ !inputs.isMainnet && env.EC2_HOST_SECRET }}
+        run: echo "EC2_HOST=${{ env.EC2_HOST_SECRET }}" >> $GITHUB_ENV
 
       - name: Discover EC2_HOST via AWS API (testnet)
-        if: ${{ !inputs.isMainnet && !secrets.EC2_HOST }}
+        if: ${{ !inputs.isMainnet && !env.EC2_HOST_SECRET }}
         run: |
           public_ip=$(aws ec2 describe-instances \
             --region ${{ inputs.ecr-repo-aws-region }} \
@@ -114,7 +122,7 @@ jobs:
             --query "Reservations[*].Instances[*].PublicIpAddress" \
             --output text)
           echo "EC2_HOST=$public_ip"       >> $GITHUB_ENV
-          echo "EC2_USER=${{ secrets.EC2_USER }}" >> $GITHUB_ENV
+          echo "EC2_USER=${{ env.EC2_USER_SECRET }}" >> $GITHUB_ENV
 
       - name: Retrieve application secrets
         run: |
@@ -139,16 +147,16 @@ jobs:
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             ${{ inputs.composefile-path }} .env \
-            ${{ secrets.EC2_USER }}@${{ env.EC2_HOST }}:~/
+            ${{ env.EC2_USER_SECRET }}@${{ env.EC2_HOST }}:~/
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            ${{ secrets.EC2_USER }}@${{ env.EC2_HOST }} << 'EOF'
+            ${{ env.EC2_USER_SECRET }}@${{ env.EC2_HOST }} << 'EOF'
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv ~/$(basename ${{ inputs.composefile-path }}) ./docker-compose.yml
             mv ~/.env              ./.env
-            sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
+            sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
-              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+              | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
             docker-compose down
             docker-compose pull
             docker-compose up -d
@@ -159,7 +167,7 @@ jobs:
         if: ${{ inputs.isMainnet }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/bastion_id_rsa
+          echo "${{ env.BASTION_SSH_KEY }}" > ~/.ssh/bastion_id_rsa
           chmod 600 ~/.ssh/bastion_id_rsa
 
       - name: Upload files to bastion host (mainnet)
@@ -168,35 +176,35 @@ jobs:
           scp -o StrictHostKeyChecking=no \
             -i ~/.ssh/bastion_id_rsa \
             ${{ inputs.composefile-path }} .env \
-            ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }}:~/
+            ${{ env.BASTION_USER }}@${{ env.BASTION_USER }}:~/
 
       - name: Deploy and restart nodes on mainnet
         if: ${{ inputs.isMainnet }}
         run: |
           ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/bastion_id_rsa \
-            ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} << 'OUTER_EOF'
+            ${{ env.BASTION_USER }}@${{ env.BASTION_USER }} << 'OUTER_EOF'
             # copy compose + env into target instance
             scp -o StrictHostKeyChecking=no \
               -i ~/mainnet-node.pem \
               ~/$(basename ${{ inputs.composefile-path }}) \
-              ${{ secrets.MAINNET_NODE_USER }}@${{ env.EC2_HOST }}:/home/${{ secrets.MAINNET_NODE_USER }}/${{ inputs.ecr-repo }}.yml
+              ${{ env.BASTION_USER }}@${{ env.EC2_HOST }}:/home/${{ env.BASTION_USER }}/${{ inputs.ecr-repo }}.yml
             scp -o StrictHostKeyChecking=no \
               -i ~/mainnet-node.pem \
               ~/.env \
-              ${{ secrets.MAINNET_NODE_USER }}@${{ env.EC2_HOST }}:/home/${{ secrets.MAINNET_NODE_USER }}/.env
+              ${{ env.BASTION_USER }}@${{ env.EC2_HOST }}:/home/${{ env.BASTION_USER }}/.env
 
             # login and deploy
             ssh -o StrictHostKeyChecking=no \
               -i ~/mainnet-node.pem \
-              ${{ secrets.MAINNET_NODE_USER }}@${{ env.EC2_HOST }} << 'INNER_EOF'
-              mkdir -p /home/${{ secrets.MAINNET_NODE_USER }}/${{ inputs.ecr-repo }}
-              cd /home/${{ secrets.MAINNET_NODE_USER }}/${{ inputs.ecr-repo }}
-              mv /home/${{ secrets.MAINNET_NODE_USER }}/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
-              mv /home/${{ secrets.MAINNET_NODE_USER }}/.env ./.env
-              sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
+              ${{ env.BASTION_USER }}@${{ env.EC2_HOST }} << 'INNER_EOF'
+              mkdir -p /home/${{ env.BASTION_USER }}/${{ inputs.ecr-repo }}
+              cd /home/${{ env.BASTION_USER }}/${{ inputs.ecr-repo }}
+              mv /home/${{ env.BASTION_USER }}/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
+              mv /home/${{ env.BASTION_USER }}/.env ./.env
+              sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
               aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
-                | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+                | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
               docker compose down
               docker compose pull
               docker compose up -d
