@@ -1,329 +1,262 @@
-name: Reusable build frontend code and send it to a specified AWS EC2 instance
+# Reusable GitHub Actions workflow for building and deploying frontend to EC2
+# Uses OIDC for authentication in all environments (dev/test/mainnet)
+name: "Frontend Build and Deploy"
 
 on:
   workflow_call:
     inputs:
       repo-name:
-        description: 'name of repository'
+        description: 'Name of the repository/artifact'
         required: true
         type: string
       node-version:
-        description: 'Node version'
+        description: 'Node.js version to use'
         required: true
         type: string
       build-command:
-        description: 'Build command'
+        description: 'npm build script to run'
         required: true
         type: string
       s3-aws-region:
-        description: 'AWS Region for S3 Bucket'
+        description: 'AWS region for S3 operations'
         required: true
         type: string
       isMainnet:
-        description: 'Whether we are deploying to mainnet'
+        description: 'Flag to indicate mainnet deployment'
         required: true
         type: boolean
     secrets:
       S3_OWNER_ACCESS_KEY_ID:
-        description: 'AWS S3 Owner Access Key ID'
+        description: '(Not used with OIDC)'
         required: true
       S3_OWNER_SECRET_ACCESS_KEY:
-        description: 'AWS S3 Owner Secret Access Key'
+        description: '(Not used with OIDC)'
         required: true
       EC2_SSH_KEY:
-        description: 'Name of the EC2 SSH Key'
+        description: 'Private SSH key to connect to EC2'
         required: true
       EC2_USER:
-        description: 'User for EC2 Instance'
+        description: 'Username for SSH on EC2'
         required: true
       EC2_HOST:
-        description: 'Hostname of the EC2 Instance'
+        description: 'EC2 hostname or IP'
         required: true
       CLOUDFLARE_API_TOKEN:
-        description: 'Cloudflare API Token'
+        description: 'Cloudflare API token for cache purge'
         required: true
       CLOUDFLARE_ZONE_ID:
-        description: 'Cloudflare Zone ID'
+        description: 'Cloudflare zone identifier'
         required: true
 
+# Global environment variables
 env:
-  # AWS Configuration
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   AWS_REGION: "us-west-1"
-  AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
-  MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH: /home/ubuntu/treasurenet
-  BUCKET_NAME: tn-deployment-file-archive
-  MAINNET_BUCKET_NAME: tn-mainnet-deployment-file-archive
-  SERVICE_NAME: services
-  aws-region: us-west-1
-  EC2_USER: ${{secrets.EC2_USER}}
-  EC2_HOST: ${{secrets.EC2_HOST}}
-  NGINX_PATH: /data/nginx
-  MAINNET_NGINX_PATH: /home/ubuntu/nginx
-  aws-dev-secret-name: dev/services
-  aws-testnet-secret-name: testnet/services
-  aws-mainnet-secret-name: mainnet/services
-# Permission can be added at job level or workflow level
+  AWS_DEFAULT_DEPLOYMENT_PATH: "/data/treasurenet"
+  MAINNET_DEPLOYMENT_PATH: "/home/ubuntu/treasurenet"
+  BUCKET_NAME: "tn-deployment-file-archive"
+  MAINNET_BUCKET_NAME: "tn-mainnet-deployment-file-archive"
+  SERVICE_TAG: "services"
+  NGINX_PATH: "/data/nginx"
+  MAINNET_NGINX_PATH: "/home/ubuntu/nginx"
+  DEV_SECRET_PREFIX: "dev/services"
+  TESTNET_SECRET_PREFIX: "testnet/services"
+  MAINNET_SECRET_PREFIX: "mainnet/services"
+
+# Use OIDC for authentication and grant minimal permissions
 permissions:
-  id-token: write # This is required for requesting the JWT
-  contents: read # This is required for actions/checkout
+  id-token: write     # required for OIDC
+  contents: read      # read repository code
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: self-hosted
 
+    # Reusable step definitions using YAML anchors
+    # Dev/Test OIDC credential configuration
+    x-oidc-config-dev: &oidc-config-dev
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
+        aws-region: ${{ env.AWS_REGION }}
+    # Mainnet OIDC credential configuration
+    x-oidc-config-mainnet: &oidc-config-mainnet
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.AWS_ROLE_ARN }}
+        role-session-name: GitHub_to_AWS_via_FederatedOIDC
+        aws-region: ${{ env.AWS_REGION }}
+
     steps:
-      - name: Set date and time
+      - name: "Initialize Environment Variables"
         run: |
-          echo "DATE=$(date '+%Y%m%d')"  >> $GITHUB_ENV
+          # Store current date and time for artifact versioning
+          echo "DATE=$(date '+%Y%m%d')" >> $GITHUB_ENV
           echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
 
-      - name: Checkout code
-        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: "Set Up Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-
-
-      - name: Get EC2 details from AWS
-        if: ${{ !env.EC2_HOST && !inputs.isMainnet}}  
+          
+      - name: "Fetch Nginx Certificates (Dev/Test)"
+        if: ${{ !inputs.isMainnet }}
         run: |
+          # Determine correct secret prefix for dev/test
+          if [ "$EC2_HOST" = "" ]; then
+            prefix=${{ env.DEV_SECRET_PREFIX }}
+          else
+            prefix=${{ env.TESTNET_SECRET_PREFIX }}
+          fi
+          secret=$(aws secretsmanager get-secret-value \
+            --secret-id "${prefix}/nginx" \
+            --region ${{ env.aws-region }} \
+            --query SecretString --output text)
+          echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
+          echo "$secret" | jq -r .ssl_key         > cloudflare.key
+
+      - name: "Discover Test EC2 Instance"
+        if: ${{ !env.EC2_HOST && !inputs.isMainnet }}
+        run: |
+          # Query running EC2 instances by tag
           public_ip=$(aws ec2 describe-instances \
             --region ${{ env.aws-region }} \
-            --filters "Name=tag:Name,Values=${{ env.SERVICE_NAME }}" "Name=instance-state-name,Values=running" \
-            --query "Reservations[*].Instances[*].PublicIpAddress" \
+            --filters "Name=tag:Name,Values=${{ env.SERVICE_TAG }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].PublicIpAddress" \
             --output text)
-          
           echo "EC2_HOST=$public_ip" >> $GITHUB_ENV
-          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV
 
-      - name: Configure AWS credentials
-        if: ${{ inputs.isMainnet}}  
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ env.AWS_REGION }}
+      - name: "Configure AWS Credentials (Dev/Test)"
+        if: ${{ !inputs.isMainnet }}
+        <<: *oidc-config-dev
 
-      - name: Get EC2 details from AWS
-        if: ${{ !env.EC2_HOST && inputs.isMainnet}}  
+      - name: "Configure AWS Credentials (Mainnet)"
+        if: ${{ inputs.isMainnet }}
+        <<: *oidc-config-mainnet
+
+      - name: "Discover Mainnet EC2 Instance"
+        if: ${{ inputs.isMainnet }}
         run: |
+          # Query mainnet EC2 by specific tag
           public_dns=$(aws ec2 describe-instances \
             --region ${{ env.aws-region }} \
-            --filters "Name=tag:Name,Values=web-service-1-us-west-1" \
-                      "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Name,Values=web-service-1-us-west-1" "Name=instance-state-name,Values=running" \
             --query "Reservations[].Instances[].PublicDnsName" \
             --output text)
           echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
-          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
-            
-      - name: Build code
+          echo "EC2_USER=ubuntu"     >> $GITHUB_ENV
+
+      - name: "Install Dependencies and Build"
         run: |
           npm install --silent
-          npm run ${{ inputs.build-command }} --slient
+          npm run ${{ inputs.build-command }} --silent
 
-      - name: Archive files
+      - name: "Package Build Artifacts"
         run: |
-          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist . 
+          # Create compressed archives of dist and nginx assets
+          tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
-      - name: Retrieve nginx certs from Secrets Manager
+      - name: "Fetch Nginx Certificates (Mainnet)"
         if: ${{ inputs.isMainnet }}
         run: |
-          SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
-          SECRET_STRING=$(aws secretsmanager get-secret-value \
+          # Retrieve SSL cert and key from Secrets Manager
+          SECRET_ID="${{ env.MAINNET_SECRET_PREFIX }}/nginx"
+          secret=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ID" \
             --region ${{ env.aws-region }} \
             --query SecretString --output text)
+          echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
+          echo "$secret" | jq -r .ssl_key         > cloudflare.key
 
-          echo "$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
-          echo "$SECRET_STRING" | jq -r .ssl_key         > cloudflare.key
-      - name: add nginx cloudflare
-        if: ${{ !inputs.isMainnet }}
-        run: |
-           
-            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ inputs.s3-aws-region }}
-  
-            if [ -z "${{ env.EC2_HOST }}" ]; then
-            
-              SECRET_ID="${{ env.aws-dev-secret-name }}/nginx"
-            else
-            
-              SECRET_ID="${{ env.aws-testnet-secret-name }}/nginx"
-            fi
-            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
-            echo "\$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
-            echo "\$SECRET_STRING" | jq -r .ssl_key > cloudflare.key
 
-      - name: Upload Archive file to AWS S3
-        shell: bash
-        run: |
-          if [ "${{ inputs.isMainnet }}" != "true" ]; then
-            aws configure set aws_access_key_id     ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-            aws configure set region                ${{ inputs.s3-aws-region }}
-            BUCKET=${{ env.BUCKET_NAME }}
-          else
-            BUCKET=${{ env.MAINNET_BUCKET_NAME }}
-            
-          fi
-          aws s3 cp ./cloudflare.pem \
-            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem
 
-          aws s3 cp ./cloudflare.key \
-            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
-
-          aws s3 cp ./${{ inputs.repo-name }}.tar.gz \
-            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
-
-          aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz \
-            s3://$BUCKET/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
-
-      - name: Set up ssh key
+      - name: "Configure SSH Key"
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa  
+          chmod 600 ~/.ssh/id_rsa
 
-      - name: Download(from AWS S3), extract and replace files
-        if: ${{ !inputs.isMainnet}}  
+      - name: "Upload Artifacts to S3"
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
-          
-            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ inputs.s3-aws-region }}
-            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-          
-            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-            rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+          # Choose bucket based on environment
+          if [ "${{ inputs.isMainnet }}" != "true" ]; then
+            bucket=${{ env.BUCKET_NAME }}
+          else
+            bucket=${{ env.MAINNET_BUCKET_NAME }}
+          fi
+          aws s3 cp cloudflare.pem  s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem
+          aws s3 cp cloudflare.key  s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
+          aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
+          aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
 
-            mkdir -p ${{ env.NGINX_PATH }}
-            tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
-            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-          
-          EOF
-
-      - name: Download(from AWS S3), extract and replace files
-        if: ${{ inputs.isMainnet}}  
-        run: |
-          BASTION="jump-server-us-west-1"
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/.ssh/tn-mainnet-gha \
-                ec2-user@"$BASTION" << 'OUTER_EOF'
-          
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/mainnet-nodes-us-west-1.pem \
-                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-                  aws s3api get-object \
-                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz \
-                  /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-
-                  aws s3api get-object \
-                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz \
-                  /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-
-                  mkdir -p ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-                  rm -rf ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
-                  tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
-                  rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-
-                  mkdir -p ${{ env.MAINNET_NGINX_PATH }}
-                  tar -zxvf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
-                  rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-                
-          INNER_EOF
-          OUTER_EOF
-          
-
-
-          
-          
-      - name: add nginx cloudflare
-        if: ${{ inputs.isMainnet }}
-        run: |
-          BASTION="jump-server-us-west-1"
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/tn-mainnet-gha \
-              ec2-user@"$BASTION" << 'OUTER_EOF'
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/mainnet-nodes-us-west-1.pem \
-              ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-              mkdir -p ${{ env.NGINX_PATH }}/certs
-               aws s3api get-object \
-                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key \
-                  /home/${{ env.EC2_USER }}/nginx/certs/cloudflare.key
-
-               aws s3api get-object \
-                  --bucket ${{ env.MAINNET_BUCKET_NAME }} \
-                  --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem \
-                  /home/${{ env.EC2_USER }}/nginx/certs/cloudflare.pem
-
-          INNER_EOF
-          OUTER_EOF
-
-
-      - name: up nginx docker
+      - name: "Deploy to Dev/Test Environment"
         if: ${{ !inputs.isMainnet }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} << EOF
-          aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ inputs.s3-aws-region }}
+          # SSH into instance and extract artifacts
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
+            aws s3 cp s3://${{ env.BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
+            mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            rm -rf ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
+            tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+            tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.NGINX_PATH }}
+          EOF
+
+      - name: "Deploy to Mainnet Environment"
+        if: ${{ inputs.isMainnet }}
+        run: |
+          # Use bastion host to reach mainnet instance
+          bastion=jump-server-us-west-1
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
+            ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
+              aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
+              aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
+              mkdir -p ${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+              rm -rf ${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/*
+              tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C ${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}
+              tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C ${{ env.MAINNET_NGINX_PATH }}
+            INNER
+          OUTER
+
+      - name: "Start Nginx Container (Dev/Test)"
+        if: ${{ !inputs.isMainnet }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
             cd ${{ env.NGINX_PATH }}
-             if docker-compose ps | grep -q "Up"; then
-              echo "Docker Compose is running."
+            if docker-compose ps | grep -q Up; then
               docker-compose restart
             else
-              echo "Docker Compose is not running."
               docker-compose up -d
             fi
           EOF
 
-      - name: up nginx docker
+      - name: "Start Nginx Container (Mainnet)"
         if: ${{ inputs.isMainnet }}
         run: |
-          BASTION="jump-server-us-west-1"
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/.ssh/tn-mainnet-gha \
-                ec2-user@"$BASTION" << 'OUTER_EOF'
-          
-              ssh -o StrictHostKeyChecking=no \
-                -i ~/mainnet-nodes-us-west-1.pem \
-                ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+          bastion=jump-server-us-west-1
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@$bastion << 'OUTER'
+            ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} << 'INNER'
+              cd ${{ env.MAINNET_NGINX_PATH }}
+              sed -i \
+                -e 's#/data/nginx#/home/ubuntu/nginx#g' \
+                -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
+                docker-compose.yaml
+              if docker compose ps | grep -q Up; then
+                docker compose restart
+              else
+                docker compose up -d
+              fi
+            INNER
+          OUTER
 
-            cd ${{ env.MAINNET_NGINX_PATH }}
-            sed -i \
-            -e 's#/data/nginx#/home/ubuntu/nginx#g' \
-            -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
-            docker-compose.yaml 
-             if docker compose ps | grep -q "Up"; then
-              echo "Docker Compose is running."
-              docker compose restart
-            else
-              echo "Docker Compose is not running."
-              docker compose up -d
-            fi
-          INNER_EOF
-          OUTER_EOF
-
-
-      - name: Purge cloudflare cache
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      - name: "Purge Cloudflare Cache"
         run: |
           curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
-          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-          -H "Content-Type: application/json" \
-          --data '{"purge_everything":true}'    
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
