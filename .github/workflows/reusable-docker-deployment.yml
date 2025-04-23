@@ -136,8 +136,12 @@ jobs:
             mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
             mv /home/ubuntu/.env ./.env
             sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
+            export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
+            export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
+            export AWS_SESSION_TOKEN=${{env.AWS_SESSION_TOKEN}}
             aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
               | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+              
             docker-compose down
             docker-compose pull
             docker-compose up -d
