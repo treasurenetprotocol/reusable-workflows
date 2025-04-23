@@ -130,6 +130,7 @@ jobs:
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
       - name: Retrieve nginx certs from Secrets Manager
+        if: ${{ inputs.isMainnet }}
         run: |
           SECRET_ID="${{ env.aws-mainnet-secret-name }}/nginx"
           SECRET_STRING=$(aws secretsmanager get-secret-value \
@@ -139,6 +140,24 @@ jobs:
 
           echo "$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
           echo "$SECRET_STRING" | jq -r .ssl_key         > cloudflare.key
+      - name: add nginx cloudflare
+        if: ${{ !inputs.isMainnet }}
+        run: |
+           
+            aws configure set aws_access_key_id ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+            aws configure set aws_secret_access_key ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+            aws configure set region ${{ inputs.s3-aws-region }}
+  
+            if [ -z "${{ env.EC2_HOST }}" ]; then
+            
+              SECRET_ID="${{ env.aws-dev-secret-name }}/nginx"
+            else
+            
+              SECRET_ID="${{ env.aws-testnet-secret-name }}/nginx"
+            fi
+            SECRET_STRING=\$(aws secretsmanager get-secret-value --secret-id \$SECRET_ID --region ${{ env.aws-region }} --query SecretString --output text)
+            echo "\$SECRET_STRING" | jq -r .ssl_certificate > cloudflare.pem
+            echo "\$SECRET_STRING" | jq -r .ssl_key > cloudflare.key
 
       - name: Upload Archive file to AWS S3
         shell: bash
@@ -226,6 +245,8 @@ jobs:
           OUTER_EOF
           
 
+
+          
           
       - name: add nginx cloudflare
         if: ${{ inputs.isMainnet }}
@@ -237,7 +258,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
               -i ~/mainnet-nodes-us-west-1.pem \
               ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
-
+              mkdir -p ${{ env.NGINX_PATH }}/certs
                aws s3api get-object \
                   --bucket ${{ env.MAINNET_BUCKET_NAME }} \
                   --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key \
