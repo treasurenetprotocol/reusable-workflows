@@ -241,12 +241,12 @@ jobs:
                aws s3api get-object \
                   --bucket ${{ env.MAINNET_BUCKET_NAME }} \
                   --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key \
-                  /home/${{ env.EC2_USER }}/nginx/cloudflare.key
+                  /home/${{ env.EC2_USER }}/nginx/certs/cloudflare.key
 
                aws s3api get-object \
                   --bucket ${{ env.MAINNET_BUCKET_NAME }} \
                   --key ${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem \
-                  /home/${{ env.EC2_USER }}/nginx/cloudflare.pem
+                  /home/${{ env.EC2_USER }}/nginx/certs/cloudflare.pem
 
           INNER_EOF
           OUTER_EOF
