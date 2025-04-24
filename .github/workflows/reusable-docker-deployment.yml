@@ -111,7 +111,7 @@ jobs:
         if: ${{ inputs.isMainnet }}  
         run: |
           public_dns=$(aws ec2 describe-instances \
-            --region ${{ env.aws-region }} \
+            --region ${{ env.AWS_REGION }} \
             --filters "Name=tag:Name,Values=web-service-1-us-west-1" \
                       "Name=instance-state-name,Values=running" \
             --query "Reservations[].Instances[].PublicDnsName" \
