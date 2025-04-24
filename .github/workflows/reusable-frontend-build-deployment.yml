@@ -56,6 +56,7 @@ env:
   DEV_SECRET_PREFIX: "dev/services"
   TESTNET_SECRET_PREFIX: "testnet/services"
   MAINNET_SECRET_PREFIX: "mainnet/services"
+  EC2_USER: ${{secrets.EC2_USER}}
 
 # Use OIDC for authentication and grant minimal permissions
 permissions:
