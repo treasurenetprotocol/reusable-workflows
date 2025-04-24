@@ -115,7 +115,7 @@ jobs:
       - name: "Discover EC2 Instance"
         run: |
           # Debug: print EC2_HOST as seen at the start (could be set via matrix/env)
-          echo "DEBUG: Before detection, EC2_HOST='${EC2_HOST}'"
+          echo "DEBUG: Before detection, EC2_HOST='${{ env.EC2_HOST }}'"
 
           # Only query AWS if EC2_HOST is not already defined
           if [ -z "${{ secrets.EC2_HOST }}" ]; then
@@ -146,18 +146,18 @@ jobs:
             fi
 
           else
-            echo "DEBUG: EC2_HOST already set to '${EC2_HOST}', skipping AWS query"
+            echo "DEBUG: EC2_HOST already set to '${{ env.EC2_HOST }}', skipping AWS query"
           fi
 
           # Debug: show the value we just stored (public_dns or public_ip)
           echo "DEBUG: Final EC2_HOST (local var)='${public_dns:-$public_ip}'"
 
           # Ensure EC2_USER is defined
-          if [ -z "${EC2_USER}" ]; then
-            echo "DEBUG: EC2_USER is empty, defaulting to 'ubuntu'"
+          if [ -z "${env.EC2_USER}" ]; then
+            echo "DEBUG: env.EC2_USER is empty, defaulting to 'ubuntu'"
             echo "EC2_USER=ubuntu" >> $GITHUB_ENV
           else
-            echo "DEBUG: EC2_USER already set to '${EC2_USER}'"
+            echo "DEBUG: EC2_USER already set to '${env.EC2_USER}'"
           fi
 
 
@@ -208,16 +208,16 @@ jobs:
           bucket="tn-deployment-file-archive"
 
           # 2) Copy and extract via a single SSH hop
-          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} <<EOF
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} <<EOF
           mkdir -p /data/nginx/certs
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem /data/nginx/certs/cloudflare.pem
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
 
-          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz
-          tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}.tar.gz -C $dest
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C $dest
 
-          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz
-          tar -zxf /home/${EC2_USER}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx
+          aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx
           EOF
 
       - name: "Deploy to Mainnet EC2 via Bastion"
@@ -227,7 +227,7 @@ jobs:
 
           # SSH into bastion, then into target host, and unpack
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion <<OUTER
-          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${{ env.EC2_HOST }} <<INNER
           mkdir -p /home/ubuntu/nginx/certs
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem /home/ubuntu/nginx/certs/cloudflare.pem
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
@@ -261,7 +261,7 @@ jobs:
           # First hop: to Bastion
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/tn-mainnet-gha ec2-user@$bastion <<OUTER
           # Second hop: to Mainnet node
-          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${{ env.EC2_HOST }} <<INNER
           cd ${{ env.MAINNET_NGINX_PATH }}
           # Patch compose paths
           sed -i \
