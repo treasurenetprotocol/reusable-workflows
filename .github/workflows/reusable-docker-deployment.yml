@@ -162,14 +162,14 @@ jobs:
           scp -o StrictHostKeyChecking=no \
             -i ~/.ssh/tn-mainnet-gha \
             ${{ inputs.composefile-path }} .env \
-            ec2-user@$jump-server-us-west-1:~/
+            ec2-user@jump-server-us-west-1:~/
 
       - name: Deploy and restart nodes on mainnet
         if: ${{ inputs.isMainnet }}
         run: |
           ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/tn-mainnet-gha \
-            ec2-user@$jump-server-us-west-1 << 'OUTER_EOF'
+            ec2-user@jump-server-us-west-1 << 'OUTER_EOF'
             # copy compose + env into target instance
           scp -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
