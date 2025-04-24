@@ -181,7 +181,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/tn-mainnet-gha \
-            ec2-user@jump-server-us-west-1 << 'OUTER_EOF'
+            ec2-user@jump-server-us-west-1 <<OUTER_EOF
             # copy compose + env into target instance
           scp -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
@@ -194,7 +194,7 @@ jobs:
             # login and deploy
           ssh -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
-            ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+            ubuntu@${{ env.EC2_HOST }} <<INNER_EOF
           mkdir -p /home/ubuntu/${{ inputs.ecr-repo }}
           cd /home/ubuntu/${{ inputs.ecr-repo }}
           mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
