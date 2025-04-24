@@ -131,6 +131,7 @@ jobs:
 
               echo "DEBUG: AWS returned PublicDnsName='${public_dns}'"
               echo "EC2_HOST=${public_dns}" >> $GITHUB_ENV
+              echo "EC2_USER=ubuntu" >> $GITHUB_ENV
 
             else
               # Query dev/test EC2 by general tag for its public IP
@@ -142,6 +143,7 @@ jobs:
 
               echo "DEBUG: AWS returned PublicIpAddress='${public_ip}'"
               echo "EC2_HOST=${public_ip}" >> $GITHUB_ENV
+              echo "EC2_USER=ubuntu" >> $GITHUB_ENV
 
             fi
 
@@ -149,16 +151,7 @@ jobs:
             echo "DEBUG: EC2_HOST already set to '${{ env.EC2_HOST }}', skipping AWS query"
           fi
 
-          # Debug: show the value we just stored (public_dns or public_ip)
-          echo "DEBUG: Final EC2_HOST (local var)='${public_dns:-$public_ip}'"
 
-          # Ensure EC2_USER is defined
-          if [ -z "${env.EC2_USER}" ]; then
-            echo "DEBUG: env.EC2_USER is empty, defaulting to 'ubuntu'"
-            echo "EC2_USER=ubuntu" >> $GITHUB_ENV
-          else
-            echo "DEBUG: EC2_USER already set to '${env.EC2_USER}'"
-          fi
 
 
       - name: "Install Dependencies and Build"
