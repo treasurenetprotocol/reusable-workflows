@@ -107,6 +107,18 @@ jobs:
           echo "EC2_HOST=$public_ip"       >> $GITHUB_ENV
           echo "EC2_USER=ubuntu" >> $GITHUB_ENV
 
+      - name: Get EC2 details from AWS (mainnet)
+        if: ${{ inputs.isMainnet }}  
+        run: |
+          public_dns=$(aws ec2 describe-instances \
+            --region ${{ env.aws-region }} \
+            --filters "Name=tag:Name,Values=web-service-1-us-west-1" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].PublicDnsName" \
+            --output text)
+          echo "EC2_HOST=$public_dns" >> $GITHUB_ENV
+          echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
+
       - name: Retrieve application secrets
         run: |
           SECRET_STRING=$(aws secretsmanager get-secret-value \
@@ -177,7 +189,7 @@ jobs:
 
           scp -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
-            .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/.env
+            .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.env
 
             # login and deploy
           ssh -o StrictHostKeyChecking=no \
@@ -186,7 +198,7 @@ jobs:
           mkdir -p /home/ubuntu/${{ inputs.ecr-repo }}
           cd /home/ubuntu/${{ inputs.ecr-repo }}
           mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
-          mv /home/ubuntu/.env ./.env
+          mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./${{ inputs.ecr-repo }}.env
           sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
           aws ecr get-login-password --region ${{ inputs.ecr-repo-aws-region }} \
             | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
