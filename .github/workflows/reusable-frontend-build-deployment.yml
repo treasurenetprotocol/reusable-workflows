@@ -198,7 +198,6 @@ jobs:
         if: ${{ !inputs.isMainnet }}
         run: |
           # 1) Set local variables for path & bucket
-          dest="/data/treasurenet"
           bucket="tn-deployment-file-archive"
 
           # 2) Copy and extract via a single SSH hop
@@ -208,7 +207,7 @@ jobs:
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C $dest
+          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C /data/treasurenet
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
           tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx
