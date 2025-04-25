@@ -207,10 +207,16 @@ jobs:
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
+           mkdir -p /data/treasurenet/${{ inputs.repo-name }}
+           rm -rf /data/treasurenet/${{ inputs.repo-name }}/*
           tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C /data/treasurenet
+          rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
+           mkdir -p /data/nginx/${{ inputs.repo-name }}
+           rm -rf /data/nginx/${{ inputs.repo-name }}/*
           tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx
+           rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
           EOF
 
       - name: "Deploy to Mainnet EC2 via Bastion"
@@ -226,12 +232,16 @@ jobs:
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
-          mkdir -p /home/ubuntu/treasurenet
+          mkdir -p /home/ubuntu/treasurenet/${{ inputs.repo-name }}
+           rm -rf /home/ubuntu/treasurenet/${{ inputs.repo-name }}/*
           tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C /home/ubuntu/treasurenet
+          rm -rf /home/ubuntu/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
-          mkdir -p /home/ubuntu/nginx
+          mkdir -p /home/ubuntu/nginx/${{ inputs.repo-name }}
+           rm -rf /home/ubuntu/nginx/${{ inputs.repo-name }}/*
           tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C /home/ubuntu/nginx
+          rm -rf  /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
           INNER
           OUTER
 
