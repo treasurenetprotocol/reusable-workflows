@@ -213,8 +213,7 @@ jobs:
           rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
-           mkdir -p /data/nginx/
-           rm -rf /data/nginx/*
+
           tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz -C /data/nginx/
            rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
           EOF
@@ -238,8 +237,7 @@ jobs:
           rm -rf /home/ubuntu/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
-          mkdir -p /home/ubuntu/nginx/
-           rm -rf /home/ubuntu/nginx/*
+
           tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz -C /home/ubuntu/nginx/
           rm -rf  /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
           INNER
