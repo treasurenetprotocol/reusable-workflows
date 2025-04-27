@@ -44,6 +44,7 @@ on:
 
 env:
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
+  TESTNET_AWS_ROLE_ARN: "arn:aws:iam::381492270411:role/GitHubActionsOIDCRole"
   AWS_REGION: us-west-1
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH: /home/ubuntu/treasurenet
@@ -69,7 +70,7 @@ jobs:
         if: ${{ !inputs.isMainnet }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
+          role-to-assume: ${{ TESTNET_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: "Configure AWS Credentials (Mainnet)"
@@ -122,6 +123,7 @@ jobs:
 
       - name: Retrieve application secrets
         run: |
+          
           SECRET_STRING=$(aws secretsmanager get-secret-value \
             --secret-id ${{ inputs.aws-secret-name }} \
             --region ${{ inputs.ecr-repo-aws-region }} \
@@ -148,7 +150,7 @@ jobs:
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
-            mv /home/ubuntu/.env ./.env
+            mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./.env
             sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
             export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
