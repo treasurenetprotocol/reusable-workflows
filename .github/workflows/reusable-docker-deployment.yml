@@ -70,7 +70,7 @@ jobs:
         if: ${{ !inputs.isMainnet }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ TESTNET_AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.TESTNET_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: "Configure AWS Credentials (Mainnet)"
