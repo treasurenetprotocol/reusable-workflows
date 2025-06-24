@@ -1,0 +1,173 @@
+name: Reusable Branch Merge Validation
+
+on:
+  workflow_call:
+    inputs:
+      merge_rules:
+        description: 'JSON string defining allowed merge rules (e.g., {"testnet": ["develop", "hotfix-testnet"], "main": ["testnet", "hotfix-main"]})'
+        required: false
+        type: string
+        default: '{"testnet": ["develop", "hotfix-testnet"], "main": ["testnet", "hotfix-main"]}'
+    outputs:
+      validation_result:
+        description: 'Result of the validation (true/false)'
+        value: ${{ jobs.validate-branch-merge.outputs.valid }}
+      validation_message:
+        description: 'Validation result message'
+        value: ${{ jobs.validate-branch-merge.outputs.message }}
+
+jobs:
+  validate-branch-merge:
+    runs-on: ubuntu-latest
+    name: Validate Branch Merge Rules
+    outputs:
+      valid: ${{ steps.validate.outputs.valid }}
+      message: ${{ steps.validate.outputs.message }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Validate Branch Merge Rules
+        id: validate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sourceBranch = context.payload.pull_request.head.ref;
+            const targetBranch = context.payload.pull_request.base.ref;
+            
+            console.log(`Validating merge: ${sourceBranch} -> ${targetBranch}`);
+            
+            // Parse merge rules from input
+            const mergeRulesInput = '${{ inputs.merge_rules }}';
+            let allowedMerges;
+            
+            try {
+              allowedMerges = JSON.parse(mergeRulesInput);
+              console.log('Parsed merge rules:', allowedMerges);
+            } catch (error) {
+              console.error('Failed to parse merge rules:', error);
+              core.setOutput('valid', 'false');
+              core.setOutput('message', 'Invalid merge rules configuration');
+              return;
+            }
+            
+            // Check if this is a valid merge
+            let isValidMerge = false;
+            let errorMessage = '';
+            
+            if (allowedMerges[targetBranch]) {
+              // Check for exact match of source branch
+              const exactMatch = allowedMerges[targetBranch].includes(sourceBranch);
+              
+              // Check for hotfix prefix match
+              const hotfixMatch = allowedMerges[targetBranch].some(allowed => 
+                allowed.startsWith('hotfix-') && sourceBranch.startsWith(allowed + '/')
+              );
+              
+              isValidMerge = exactMatch || hotfixMatch;
+              
+              if (!isValidMerge) {
+                errorMessage = `❌ Merge from '${sourceBranch}' to '${targetBranch}' is not allowed`;
+              }
+            } else {
+              // If target branch is not in the protected list, allow merge
+              isValidMerge = true;
+              console.log(`Target branch '${targetBranch}' is not protected - merge allowed`);
+            }
+            
+            if (!isValidMerge) {
+              console.log(`Validation failed: ${errorMessage}`);
+              
+              core.setOutput('valid', 'false');
+              core.setOutput('message', errorMessage);
+              core.setOutput('sourceBranch', sourceBranch);
+              core.setOutput('targetBranch', targetBranch);
+              core.setOutput('allowedMerges', JSON.stringify(allowedMerges));
+              return;
+            }
+            
+            console.log('Branch merge validation passed');
+            core.setOutput('valid', 'true');
+            core.setOutput('message', 'Branch merge rules validation passed');
+            
+      - name: Comment PR
+        if: steps.validate.outputs.valid == 'false'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ## 🚨 Branch Merge Rules Validation Failed
+            
+            **Source branch:** `${{ steps.validate.outputs.sourceBranch }}`
+            **Target branch:** `${{ steps.validate.outputs.targetBranch }}`
+            
+            **Error message:**
+            ${{ steps.validate.outputs.message }}
+            
+            ### ✅ Allowed Branch Merge Rules
+            
+            Our branch merge strategy is as follows:
+            
+            #### 🎯 Merges to `testnet` branch
+            - ✅ `develop` → `testnet`
+            - ✅ `hotfix-testnet/*` → `testnet`
+            
+            #### 🎯 Merges to `main` branch  
+            - ✅ `testnet` → `main`
+            - ✅ `hotfix-main/*` → `main`
+            
+            ### 📋 Branch Flow Description
+            
+            **Normal development flow:**
+            ```
+            feature/fix branches → develop → testnet → main
+            ```
+            
+            **Emergency hotfix flow:**
+            ```
+            hotfix-testnet/* → testnet
+            hotfix-main/* → main
+            ```
+            
+            ### 📝 Merge Rules Explained
+            
+            1. **Development branch (`develop`)**
+               - All feature and fix branches should merge to `develop` first
+               - `develop` branch can only merge to `testnet` for testing
+            
+            2. **Testing branch (`testnet`)**  
+               - Used for testing and validation
+               - Only `testnet` branch can merge to `main` for production release
+            
+            3. **Production branch (`main`)**
+               - Production environment branch
+               - Only accepts merges from `testnet` and emergency hotfixes
+            
+            4. **Hotfix branches**
+               - `hotfix-testnet/*`: Can directly merge to `testnet`
+               - `hotfix-main/*`: Can directly merge to `main`
+            
+            ### 🔧 How to Fix
+            
+            1. **If you want to deploy to testing environment:**
+               - Please merge your changes to `develop` branch first
+               - Then create a PR from `develop` to `testnet`
+            
+            2. **If you want to deploy to production environment:**
+               - Ensure your changes have been tested in `testnet` branch
+               - Then create a PR from `testnet` to `main`
+            
+            3. **If this is an emergency hotfix:**
+               - For testing environment fix: use `hotfix-testnet/` prefix
+               - For production environment fix: use `hotfix-main/` prefix
+            
+            ---
+            *This comment was automatically generated by the Branch Merge Rules Validation workflow*
+          message-id: branch-merge-validation
+          refresh-message-position: true
+            
+      - name: Fail workflow if validation fails
+        if: steps.validate.outputs.valid == 'false'
+        run: |
+          echo "Branch merge rules validation failed: ${{ steps.validate.outputs.message }}"
+          exit 1
