@@ -1,0 +1,227 @@
+name: Reusable Branch Name and PR Title Validation
+
+on:
+  workflow_call:
+    inputs:
+      allowed_team_names:
+        description: 'Comma-separated list of allowed team names (e.g., DEV,BUG,INF,QA)'
+        required: false
+        type: string
+        default: 'DEV,BUG,INF,QA'
+      valid_prefixes:
+        description: 'Comma-separated list of valid branch/PR prefixes'
+        required: false
+        type: string
+        default: 'feat,feature,fix,docs,style,refactor,perf,test,build,ci,chore,revert'
+      hotfix_prefixes:
+        description: 'Comma-separated list of hotfix branch prefixes that bypass validation'
+        required: false
+        type: string
+        default: 'hotfix-testnet/,hotfix-main/'
+    outputs:
+      validation_result:
+        description: 'Result of the validation (true/false)'
+        value: ${{ jobs.validate-branch-and-pr.outputs.valid }}
+      validation_message:
+        description: 'Validation result message'
+        value: ${{ jobs.validate-branch-and-pr.outputs.message }}
+
+jobs:
+  validate-branch-and-pr:
+    runs-on: ubuntu-latest
+    name: Validate Branch Name and PR Title
+    outputs:
+      valid: ${{ steps.validate.outputs.valid }}
+      message: ${{ steps.validate.outputs.message }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Validate Branch Name and PR Title
+        id: validate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branchName = context.payload.pull_request.head.ref;
+            const prTitle = context.payload.pull_request.title;
+            console.log(`Validating branch name: ${branchName}`);
+            console.log(`Validating PR title: ${prTitle}`);
+            
+            // Get configurable parameters
+            const allowedTeams = '${{ inputs.allowed_team_names }}'.split(',');
+            const validPrefixes = '${{ inputs.valid_prefixes }}'.split(',');
+            const hotfixPrefixes = '${{ inputs.hotfix_prefixes }}'.split(',');
+            
+            console.log(`Allowed team names: ${allowedTeams.join(', ')}`);
+            console.log(`Valid prefixes: ${validPrefixes.join(', ')}`);
+            console.log(`Hotfix prefixes: ${hotfixPrefixes.join(', ')}`);
+            
+            let allIssues = [];
+            let branchValid = true;
+            let prTitleValid = true;
+            
+            // Check if it's a hotfix branch (exception case)
+            const isHotfixBranch = hotfixPrefixes.some(prefix => branchName.startsWith(prefix));
+            if (isHotfixBranch) {
+              console.log('Hotfix branch detected - validation passed for both branch and PR title');
+              core.setOutput('valid', 'true');
+              core.setOutput('message', 'Hotfix branch - validation skipped');
+              return;
+            }
+            
+            // Build team-ticket regex pattern
+            const teamPattern = allowedTeams.join('|');
+            const ticketPattern = `(${teamPattern})-\\d+`;
+            
+            // Validate Branch Name
+            const branchPattern = new RegExp(`^(${validPrefixes.join('|')})(/.*)?.*${ticketPattern}.*$`, 'i');
+            console.log(`Using branch pattern: ${branchPattern.toString()}`);
+            
+            if (!branchPattern.test(branchName)) {
+              branchValid = false;
+              allIssues.push('**Branch Name Issues:**');
+              
+              // Check prefix
+              const hasValidPrefix = validPrefixes.some(prefix => 
+                branchName.toLowerCase().startsWith(prefix.toLowerCase())
+              );
+              if (!hasValidPrefix) {
+                allIssues.push(`❌ Branch name must start with one of: ${validPrefixes.join(', ')}`);
+              }
+              
+              // Check team-ticket format
+              const ticketRegex = new RegExp(`(${teamPattern})-\\d+`, 'i');
+              if (!ticketRegex.test(branchName)) {
+                allIssues.push(`❌ Branch name must contain a ticket reference in format [TEAM]-[NUMBER] where TEAM is one of: ${allowedTeams.join(', ')}`);
+              }
+            }
+            
+            // Validate PR Title
+            const prTitlePattern = new RegExp(`^(${validPrefixes.join('|')}):.*${ticketPattern}.*$`, 'i');
+            console.log(`Using PR title pattern: ${prTitlePattern.toString()}`);
+            
+            if (!prTitlePattern.test(prTitle)) {
+              prTitleValid = false;
+              if (allIssues.length > 0) allIssues.push(''); // Add spacing
+              allIssues.push('**PR Title Issues:**');
+              
+              // Check prefix with colon
+              const hasValidPrPrefix = validPrefixes.some(prefix => 
+                prTitle.toLowerCase().startsWith(prefix.toLowerCase() + ':')
+              );
+              if (!hasValidPrPrefix) {
+                allIssues.push(`❌ PR title must start with one of: ${validPrefixes.map(p => p + ':').join(', ')}`);
+              }
+              
+              // Check team-ticket format in PR title
+              const ticketRegex = new RegExp(`(${teamPattern})-\\d+`, 'i');
+              if (!ticketRegex.test(prTitle)) {
+                allIssues.push(`❌ PR title must contain a ticket reference in format [TEAM]-[NUMBER] where TEAM is one of: ${allowedTeams.join(', ')}`);
+              }
+            }
+            
+            // Set outputs based on validation results
+            const overallValid = branchValid && prTitleValid;
+            
+            if (!overallValid) {
+              const errorMessage = allIssues.join('\n');
+              console.log(`Validation failed: ${errorMessage}`);
+              
+              core.setOutput('valid', 'false');
+              core.setOutput('message', errorMessage);
+              core.setOutput('branchName', branchName);
+              core.setOutput('prTitle', prTitle);
+              core.setOutput('allowedTeams', allowedTeams.join(', '));
+              core.setOutput('branchValid', branchValid.toString());
+              core.setOutput('prTitleValid', prTitleValid.toString());
+              return;
+            }
+            
+            console.log('Branch name and PR title validation passed');
+            core.setOutput('valid', 'true');
+            core.setOutput('message', 'Branch name and PR title are valid');
+            
+      - name: Comment PR
+        if: steps.validate.outputs.valid == 'false'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ## 🚨 Branch Name and PR Title Validation Failed
+            
+            **Current branch name:** `${{ steps.validate.outputs.branchName }}`
+            **Current PR title:** `${{ steps.validate.outputs.prTitle }}`
+            
+            **Issues found:**
+            ${{ steps.validate.outputs.message }}
+            
+            ### ✅ Valid Formats
+            
+            #### 📝 Branch Name Format
+            Your branch name should follow this pattern:
+            ```
+            [type]/[description]-[TEAM]-[NUMBER]
+            ```
+            
+            #### 📝 PR Title Format
+            Your PR title should follow this pattern:
+            ```
+            [type]: [description] [TEAM]-[NUMBER]
+            ```
+            
+            **Where:**
+            
+            **Type** must be one of:
+            - `feat` or `feature` - New features or functionality
+            - `fix` - Bug fixes
+            - `docs` - Documentation changes
+            - `style` - Code formatting (no functional changes)
+            - `refactor` - Code refactoring (no functional changes)
+            - `perf` - Performance improvements
+            - `test` - Adding or modifying tests
+            - `build` - Build system or dependency changes
+            - `ci` - Continuous integration configuration changes
+            - `chore` - Other miscellaneous changes (no code functionality impact)
+            - `revert` - Reverting a previous commit
+            
+            **Team-Ticket** must be in format `[TEAM]-[NUMBER]` where TEAM is one of: ${{ steps.validate.outputs.allowedTeams }}
+            
+            ### 📝 Examples
+            
+            **Valid Branch Names:**
+            - `feat/user-authentication-DEV-123`
+            - `fix/login-bug-BUG-456`
+            - `docs/api-documentation-DEV-789`
+            - `refactor/payment-module-INF-321`
+            
+            **Valid PR Titles:**
+            - `feat: Add user authentication system DEV-123`
+            - `fix: Resolve login bug in authentication DEV-456`
+            - `docs: Update API documentation DEV-789`
+            - `refactor: Improve payment module structure INF-321`
+            
+            ### 🚨 Exception: Hotfix Branches
+            Hotfix branches and their PRs are exempt from this validation:
+            ${{ inputs.hotfix_prefixes }}
+            
+            ### 🔧 How to Fix:
+            1. **For Branch Name Issues:**
+               - Rename your branch to follow the correct format
+               - Push the renamed branch
+            
+            2. **For PR Title Issues:**
+               - Edit this pull request title to follow the correct format
+               - Make sure to include the ticket reference
+            
+            3. **Update this pull request** after making the changes
+            
+            ---
+            *This comment was automatically generated by the Branch Name and PR Title Validation workflow*
+          message-id: branch-name-validation
+          refresh-message-position: true
+            
+      - name: Fail workflow if validation fails
+        if: steps.validate.outputs.valid == 'false'
+        run: |
+          echo "Branch name and PR title validation failed: ${{ steps.validate.outputs.message }}"
+          exit 1
