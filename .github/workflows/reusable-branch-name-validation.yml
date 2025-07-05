@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default: 'hotfix-testnet/,hotfix-main/'
+      exception_branch_names:
+        description: 'Comma-separated list of complete branch names that bypass validation (e.g., develop,testnet,mainnet)'
+        required: false
+        type: string
+        default: 'develop,testnet,mainnet,main,master'
     outputs:
       validation_result:
         description: 'Result of the validation (true/false)'
@@ -52,10 +57,12 @@ jobs:
             const allowedTeams = '${{ inputs.allowed_team_names }}'.split(',');
             const validPrefixes = '${{ inputs.valid_prefixes }}'.split(',');
             const hotfixPrefixes = '${{ inputs.hotfix_prefixes }}'.split(',');
+            const exceptionBranchNames = '${{ inputs.exception_branch_names }}'.split(',');
             
             console.log(`Allowed team names: ${allowedTeams.join(', ')}`);
             console.log(`Valid prefixes: ${validPrefixes.join(', ')}`);
             console.log(`Hotfix prefixes: ${hotfixPrefixes.join(', ')}`);
+            console.log(`Exception branch names: ${exceptionBranchNames.join(', ')}`);
             
             let allIssues = [];
             let branchValid = true;
@@ -67,6 +74,15 @@ jobs:
               console.log('Hotfix branch detected - validation passed for both branch and PR title');
               core.setOutput('valid', 'true');
               core.setOutput('message', 'Hotfix branch - validation skipped');
+              return;
+            }
+            
+            // Check if it's an exception branch (exception case)
+            const isExceptionBranch = exceptionBranchNames.some(name => branchName === name);
+            if (isExceptionBranch) {
+              console.log('Exception branch detected - validation passed for both branch and PR title');
+              core.setOutput('valid', 'true');
+              core.setOutput('message', 'Exception branch - validation skipped');
               return;
             }
             
@@ -203,6 +219,10 @@ jobs:
             ### 🚨 Exception: Hotfix Branches
             Hotfix branches and their PRs are exempt from this validation:
             ${{ inputs.hotfix_prefixes }}
+            
+            ### 🚨 Exception: Exception Branches
+            Exception branches and their PRs are exempt from this validation:
+            ${{ inputs.exception_branch_names }}
             
             ### 🔧 How to Fix:
             1. **For Branch Name Issues:**
