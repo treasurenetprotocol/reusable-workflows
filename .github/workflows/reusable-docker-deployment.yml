@@ -191,7 +191,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           cat >> ~/.ssh/config << 'EOF'
-          Host us-west-1-jump.treasurenet.io
+          Host us-west-1-jump-server.treasurenet.io
             ProxyCommand cloudflared access ssh --hostname %h
             User ec2-user
             IdentityFile ~/.ssh/tn-mainnet-gha
@@ -206,12 +206,12 @@ jobs:
         run: |
           scp -o StrictHostKeyChecking=no \
             ${{ inputs.composefile-path }} .env \
-            us-west-1-jump.treasurenet.io:~/
+            us-west-1-jump-server.treasurenet.io:~/
 
       - name: Deploy and restart nodes on mainnet
         if: ${{ inputs.isMainnet }}
         run: |
-          ssh us-west-1-jump.treasurenet.io << 'OUTER_EOF'
+          ssh us-west-1-jump-server.treasurenet.io << 'OUTER_EOF'
             # copy compose + env into target instance
           scp -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
