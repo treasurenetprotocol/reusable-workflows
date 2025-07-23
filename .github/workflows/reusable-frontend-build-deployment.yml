@@ -25,6 +25,9 @@ on:
         description: 'Flag to indicate mainnet deployment'
         required: true
         type: boolean
+      isDapp:
+        description: 'Whether we are deploying to dapp'
+        type: boolean
     secrets:
       EC2_SSH_KEY:
         description: 'Private SSH key to connect to EC2'
@@ -101,6 +104,13 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
+          aws-region: ${{ inputs.s3-aws-region }}
+
+      - name: "Configure AWS Credentials (Dapps)"
+        if: ${{ inputs.isDapp }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::381492075531:role/GitHubActionsOIDCRole
           aws-region: ${{ inputs.s3-aws-region }}
 
       - name: "Configure AWS Credentials (Mainnet)"
