@@ -59,6 +59,7 @@ env:
   DEV_SECRET_PREFIX: "dev/services"
   TESTNET_SECRET_PREFIX: "testnet/services"
   MAINNET_SECRET_PREFIX: "mainnet/services"
+  DAPP_SECRET_PREFIX: "dapp/services"
   EC2_USER: ${{secrets.EC2_USER}}
 
 # Use OIDC for authentication and grant minimal permissions
@@ -129,6 +130,9 @@ jobs:
             prefix=${{ env.DEV_SECRET_PREFIX }}
           else
             prefix=${{ env.TESTNET_SECRET_PREFIX }}
+          fi
+          if [ "${{ inputs.isDapp }}" = "true" ]; then
+            prefix=${{ env.DAPP_SECRET_PREFIX }}
           fi
           # Retrieve and decode
           secret=$(aws secretsmanager get-secret-value \
