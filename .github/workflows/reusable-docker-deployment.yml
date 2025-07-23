@@ -27,6 +27,9 @@ on:
         description: 'Whether we are deploying to mainnet'
         required: true
         type: boolean
+      isDapp:
+        description: 'Whether we are deploying to dapp'
+        type: boolean
     secrets:
       EC2_SSH_KEY:
         description: 'Private SSH key for dev/testnet EC2 instances'
@@ -45,6 +48,7 @@ on:
 env:
   AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
   TESTNET_AWS_ROLE_ARN: "arn:aws:iam::381492270411:role/GitHubActionsOIDCRole"
+  OTTER_AWS_ROLE_ARN: "arn:aws:iam::381492075531:role/GitHubActionsOIDCRole"
   AWS_REGION: us-west-1
   AWS_DEFAULT_DEPLOYMENT_PATH: /data/treasurenet
   MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH: /home/ubuntu/treasurenet
@@ -87,6 +91,14 @@ jobs:
         with:
           role-to-assume: ${{ env.TESTNET_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: "Configure AWS Credentials (DAPP)"
+        if: ${{ inputs.isDapp }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OTTER_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
 
       - name: "Configure AWS Credentials (Mainnet)"
         if: ${{ inputs.isMainnet }}
