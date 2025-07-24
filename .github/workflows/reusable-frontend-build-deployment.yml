@@ -101,7 +101,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: "Configure AWS Credentials (Dev/Test)"
-        if: ${{ !inputs.isMainnet }}
+        if: ${{ !inputs.isDapp && !inputs.isMainnet }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
@@ -211,6 +211,7 @@ jobs:
           else
             bucket=${{ env.BUCKET_NAME }}
           fi
+          
           aws s3 cp cloudflare.pem  s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem
           aws s3 cp cloudflare.key  s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
