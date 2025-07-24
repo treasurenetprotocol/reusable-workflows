@@ -53,6 +53,7 @@ env:
   MAINNET_DEPLOYMENT_PATH: "/home/ubuntu/treasurenet"
   BUCKET_NAME: "tn-deployment-file-archive"
   MAINNET_BUCKET_NAME: "tn-mainnet-deployment-file-archive"
+  DAPP_BUCKET_NAME: "otter-main-deployment-file-archive"
   SERVICE_TAG: "services"
   NGINX_PATH: "/data/nginx"
   MAINNET_NGINX_PATH: "/home/ubuntu/nginx"
@@ -206,7 +207,9 @@ jobs:
       - name: "Upload Artifacts to S3"
         run: |
           # Choose bucket based on environment
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
+          if [ "${{ inputs.isDapp }}" = "true" ]; then
+            bucket=${{ env.DAPP_BUCKET_NAME }}
+          elif [ "${{ inputs.isMainnet }}" = "true" ]; then
             bucket=${{ env.MAINNET_BUCKET_NAME }}
           else
             bucket=${{ env.BUCKET_NAME }}
