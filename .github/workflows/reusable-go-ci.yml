@@ -107,16 +107,10 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      - name: Run gosec security scanner
-        uses: securecodewarrior/github-action-gosec@master
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
         with:
-          args: '-fmt sarif -out gosec-results.sarif ./...'
-          working-directory: ${{ inputs.working-directory }}
-
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gosec-results.sarif
+          args: './...'
 
   vulnerability-check:
     if: ${{ inputs.run-vuln-check }}
