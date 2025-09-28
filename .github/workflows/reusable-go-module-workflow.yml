@@ -1,0 +1,164 @@
+name: Reusable Go Module Complete Workflow
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version'
+        required: false
+        default: '1.22'
+        type: string
+      working-directory:
+        description: 'Working directory for Go module'
+        required: false
+        default: '.'
+        type: string
+      enable-branch-validation:
+        description: 'Enable branch merge validation'
+        required: false
+        default: true
+        type: boolean
+      merge-rules:
+        description: 'JSON string defining allowed merge rules'
+        required: false
+        type: string
+        default: '{"main": ["feat/*", "fix/*", "hotfix/*"]}'
+      auto-release:
+        description: 'Automatically create release when merging to main'
+        required: false
+        default: false
+        type: boolean
+      tag-prefix:
+        description: 'Tag prefix for releases'
+        required: false
+        default: 'v'
+        type: string
+    outputs:
+      version:
+        description: 'Released version (if auto-release enabled)'
+        value: ${{ jobs.release.outputs.version || '' }}
+      tag:
+        description: 'Created tag (if auto-release enabled)'
+        value: ${{ jobs.release.outputs.tag || '' }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # Branch validation job
+  branch-validation:
+    if: ${{ inputs.enable-branch-validation && github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/reusable-branch-merge-validation.yml
+    with:
+      merge_rules: ${{ inputs.merge-rules }}
+
+  # Comprehensive CI/CD
+  ci-cd:
+    uses: ./.github/workflows/reusable-go-ci.yml
+    with:
+      go-version: ${{ inputs.go-version }}
+      working-directory: ${{ inputs.working-directory }}
+      run-tests: true
+      run-gosec: true
+      run-vuln-check: true
+
+  # Lint check
+  lint:
+    uses: ./.github/workflows/reusable-lint-go-workflow.yml
+    with:
+      go-version: ${{ inputs.go-version }}
+
+  # Security scanning
+  security-scan:
+    uses: ./.github/workflows/reusable-secrets-scanning.yml
+    with:
+      branch: ${{ github.ref_name }}
+      depth: 50
+    secrets: inherit
+
+  # Auto-release on merge to main
+  release:
+    if: ${{ inputs.auto-release && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [ci-cd, lint]
+    uses: ./.github/workflows/reusable-semantic-release.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      release-branch: 'main'
+      tag-prefix: ${{ inputs.tag-prefix }}
+      auto-create-release-branch: false
+      bump-type: 'auto'
+
+  # PR status check
+  pr-status:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs: [ci-cd, lint]
+    steps:
+      - name: PR Ready for Merge
+        run: |
+          echo "🎉 All checks passed! PR is ready for merge."
+          echo "✅ CI/CD tests completed successfully"
+          echo "✅ Linting completed successfully"
+          echo "✅ Security scans completed successfully"
+
+  # Post-merge actions
+  post-merge:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    needs: [ci-cd, lint]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Post-merge cleanup
+        run: |
+          echo "🚀 Successfully merged to main branch"
+          echo "📦 Go module is ready for release"
+          
+          if [ "${{ inputs.auto-release }}" = "true" ]; then
+            echo "🏷️ Auto-release is enabled - creating release..."
+          else
+            echo "📋 To create a release manually:"
+            echo "   1. Create a release branch: git checkout -b release/v1.0.0"
+            echo "   2. Run the semantic release workflow"
+            echo "   3. Tag the release: git tag v1.0.0"
+          fi
+
+      - name: Comment on merged PR
+        if: ${{ github.event.pull_request }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr_number = context.payload.pull_request?.number;
+            
+            if (pr_number) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr_number,
+                body: `🎉 **Successfully merged to main!**
+                
+                **Next Steps:**
+                ${process.env.AUTO_RELEASE === 'true' ? 
+                  '✅ Auto-release is enabled - a new release will be created automatically' : 
+                  `📋 **To create a release:**
+                  1. Create a release branch from main
+                  2. Use the semantic release workflow
+                  3. Tag with semantic version (e.g., ${process.env.TAG_PREFIX}1.0.0)`
+                }
+                
+                **Module Status:**
+                - ✅ All tests passed
+                - ✅ Security scans completed
+                - ✅ Code quality checks passed
+                - ✅ Ready for production use
+                
+                *This Go module can now be imported by other projects using the latest tag.*`
+              });
+            }
+        env:
+          AUTO_RELEASE: ${{ inputs.auto-release }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}

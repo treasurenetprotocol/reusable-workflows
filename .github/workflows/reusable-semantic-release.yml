@@ -1,0 +1,197 @@
+name: Reusable Semantic Release
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Working directory'
+        required: false
+        default: '.'
+        type: string
+      release-branch:
+        description: 'Branch to create release from'
+        required: false
+        default: 'main'
+        type: string
+      tag-prefix:
+        description: 'Tag prefix (e.g., v)'
+        required: false
+        default: 'v'
+        type: string
+      auto-create-release-branch:
+        description: 'Automatically create release branch from main'
+        required: false
+        default: false
+        type: boolean
+      bump-type:
+        description: 'Version bump type (major, minor, patch, auto)'
+        required: false
+        default: 'auto'
+        type: string
+    outputs:
+      version:
+        description: 'The released version'
+        value: ${{ jobs.semantic-release.outputs.version }}
+      tag:
+        description: 'The created tag'
+        value: ${{ jobs.semantic-release.outputs.tag }}
+      release-created:
+        description: 'Whether a release was created'
+        value: ${{ jobs.semantic-release.outputs.release-created }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  semantic-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      release-created: ${{ steps.release.outputs.release-created }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release branch if requested
+        if: ${{ inputs.auto-create-release-branch }}
+        run: |
+          RELEASE_BRANCH="release/${{ inputs.tag-prefix }}$(date +%Y%m%d-%H%M%S)"
+          echo "Creating release branch: $RELEASE_BRANCH"
+          git checkout -b "$RELEASE_BRANCH"
+          git push origin "$RELEASE_BRANCH"
+          echo "RELEASE_BRANCH=$RELEASE_BRANCH" >> $GITHUB_ENV
+
+      - name: Set up release branch
+        run: |
+          if [ "${{ inputs.auto-create-release-branch }}" = "true" ]; then
+            BRANCH_TO_USE="$RELEASE_BRANCH"
+          else
+            BRANCH_TO_USE="${{ inputs.release-branch }}"
+          fi
+          echo "Using branch: $BRANCH_TO_USE"
+          git checkout "$BRANCH_TO_USE"
+          echo "CURRENT_BRANCH=$BRANCH_TO_USE" >> $GITHUB_ENV
+
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "${{ inputs.tag-prefix }}0.0.0")
+          echo "latest-tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Latest tag: $latest_tag"
+
+      - name: Calculate next version
+        id: calc-version
+        run: |
+          latest_tag="${{ steps.get-latest-tag.outputs.latest-tag }}"
+          version_part=${latest_tag#${{ inputs.tag-prefix }}}
+          
+          # Parse version parts
+          IFS='.' read -r major minor patch <<< "$version_part"
+          
+          # Determine bump type
+          bump_type="${{ inputs.bump-type }}"
+          if [ "$bump_type" = "auto" ]; then
+            # Auto-detect based on commit messages since last tag
+            commits=$(git log $latest_tag..HEAD --oneline || git log --oneline)
+            if echo "$commits" | grep -qi "BREAKING CHANGE\|!:"; then
+              bump_type="major"
+            elif echo "$commits" | grep -qi "^feat"; then
+              bump_type="minor"
+            else
+              bump_type="patch"
+            fi
+          fi
+          
+          # Calculate new version
+          case $bump_type in
+            "major")
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            "minor")
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            "patch")
+              patch=$((patch + 1))
+              ;;
+          esac
+          
+          new_version="${major}.${minor}.${patch}"
+          new_tag="${{ inputs.tag-prefix }}${new_version}"
+          
+          echo "bump-type=$bump_type" >> $GITHUB_OUTPUT
+          echo "version=$new_version" >> $GITHUB_OUTPUT
+          echo "tag=$new_tag" >> $GITHUB_OUTPUT
+          
+          echo "Bump type: $bump_type"
+          echo "New version: $new_version"
+          echo "New tag: $new_tag"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          latest_tag="${{ steps.get-latest-tag.outputs.latest-tag }}"
+          new_tag="${{ steps.calc-version.outputs.tag }}"
+          
+          echo "Generating changelog from $latest_tag to HEAD"
+          
+          # Generate changelog
+          changelog=$(git log $latest_tag..HEAD --pretty=format:"- %s (%h)" --no-merges || git log --pretty=format:"- %s (%h)" --no-merges)
+          
+          if [ -z "$changelog" ]; then
+            changelog="- No changes"
+          fi
+          
+          # Create full changelog content
+          cat > CHANGELOG_TEMP.md << EOF
+          ## $new_tag ($(date +%Y-%m-%d))
+          
+          $changelog
+          
+          EOF
+          
+          echo "Generated changelog for $new_tag"
+
+      - name: Create and push tag
+        id: create-tag
+        run: |
+          new_tag="${{ steps.calc-version.outputs.tag }}"
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # Create annotated tag
+          git tag -a "$new_tag" -m "Release $new_tag"
+          git push origin "$new_tag"
+          
+          echo "Created and pushed tag: $new_tag"
+
+      - name: Create GitHub Release
+        id: release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.calc-version.outputs.tag }}
+          release_name: Release ${{ steps.calc-version.outputs.tag }}
+          body_path: CHANGELOG_TEMP.md
+          draft: false
+          prerelease: false
+
+      - name: Set outputs
+        run: |
+          echo "version=${{ steps.calc-version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ steps.calc-version.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "release-created=true" >> $GITHUB_OUTPUT
+
+      - name: Clean up temporary files
+        run: |
+          rm -f CHANGELOG_TEMP.md
