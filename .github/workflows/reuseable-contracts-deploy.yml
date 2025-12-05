@@ -3,14 +3,25 @@ name: Reusable Deploy Contracts
 on:
   workflow_call:
     inputs:
-      action: { required: true, type: string }
-      target: { required: true, type: string }
-      network: { required: true, type: string }
-      aws_region: { required: false, type: string }
+      action:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      network:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        type: string
     secrets:
-      rpc: { required: true }
-      private_key: { required: true }
-      sm_secret_id: { required: true }
+      rpc:
+        required: true
+      private_key:
+        required: true
+      sm_secret_id:
+        required: true
 
 permissions:
   contents: read
