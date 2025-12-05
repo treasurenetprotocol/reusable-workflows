@@ -3,34 +3,20 @@ name: Reusable Deploy Contracts
 on:
   workflow_call:
     inputs:
-      action:
-        required: true
-        type: string
-      target:
-        required: true
-        type: string
-      network:
-        required: true
-        type: string
+      action: { required: true, type: string }
+      target: { required: true, type: string }
+      network: { required: true, type: string }
     secrets:
-      DEPLOYER_PRIVATE_KEY:
-        required: false
-      DEPLOYER_PRIVATE_KEY_DEV:
-        required: false
-      DEPLOYER_PRIVATE_KEY_DEV2:
-        required: false
-      DEPLOYER_PRIVATE_KEY_TESTNET:
-        required: false
-      DEPLOYER_PRIVATE_KEY_MAINNET:
-        required: false
-      DEPLOYER_PRIVATE_KEY_ETHEREUM:
-        required: false
+      rpc: { required: true }          # 调用方传入选定网络的 RPC
+      private_key: { required: true }  # 调用方传入选定网络的私钥
 
 permissions:
   contents: read
 
 env:
   NODE_VERSION: 20
+  S3_BUCKET: tn-deployment-contract-abis
+  AWS_REGION: us-west-1
 
 concurrency:
   group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ inputs.network || 'manual' }}
@@ -87,35 +73,22 @@ jobs:
           echo "script_name=$SCRIPT" >> "$GITHUB_OUTPUT"
 
       - name: Prepare network env
-        id: envs
         shell: bash
         run: |
-          NETWORK="${{ inputs.network }}"
-          case "$NETWORK" in
-            dev) RPC="${{ vars.RPC_DEV }}"; KEY="${{ secrets.DEPLOYER_PRIVATE_KEY_DEV }}" ;;
-            dev2) RPC="${{ vars.RPC_DEV2 }}"; KEY="${{ secrets.DEPLOYER_PRIVATE_KEY_DEV2 }}" ;;
-            testnet) RPC="${{ vars.RPC_TESTNET }}"; KEY="${{ secrets.DEPLOYER_PRIVATE_KEY_TESTNET }}" ;;
-            mainnet) RPC="${{ vars.RPC_MAINNET }}"; KEY="${{ secrets.DEPLOYER_PRIVATE_KEY_MAINNET }}" ;;
-            ethereum) RPC="${{ vars.RPC_ETHEREUM }}"; KEY="${{ secrets.DEPLOYER_PRIVATE_KEY_ETHEREUM }}" ;;
-            *) echo "Unsupported network: $NETWORK" >&2; exit 1 ;;
-          esac
-
-          if [ -z "$KEY" ]; then
-            KEY="${{ secrets.DEPLOYER_PRIVATE_KEY }}"
-          fi
+          RPC="${{ secrets.rpc }}"
+          KEY="${{ secrets.private_key }}"
 
           if [ -z "$RPC" ]; then
-            echo "RPC value for $NETWORK is not set. Define repo/org variable RPC_${NETWORK^^}." >&2
+            echo "RPC is not provided." >&2
             exit 1
           fi
-
           if [ -z "$KEY" ]; then
-            echo "Secret DEPLOYER_PRIVATE_KEY_${NETWORK^^} (or DEPLOYER_PRIVATE_KEY) is not configured." >&2
+            echo "Private key is not provided." >&2
             exit 1
           fi
 
           echo "RPC=$RPC" >> "$GITHUB_ENV"
-          echo "NETWORK=$NETWORK" >> "$GITHUB_ENV"
+          echo "NETWORK=${{ inputs.network }}" >> "$GITHUB_ENV"
           printf 'PRIVATE_KEY=%s\n' "$KEY" >> "$GITHUB_ENV"
 
       - name: Run deployment script
@@ -123,3 +96,50 @@ jobs:
           RPC: ${{ env.RPC }}
           PRIVATE_KEY: ${{ env.PRIVATE_KEY }}
         run: npm run ${{ steps.script.outputs.script_name }}
+
+      - name: Ensure jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Collect ABI JSONs (CLI)
+        run: |
+          set -euo pipefail
+          SRC="artifacts/contracts"
+          OUT="/tmp/abi-json"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          if [ ! -d "$SRC" ]; then
+            echo "Artifacts directory not found: $SRC" >&2
+            exit 1
+          fi
+          find "$SRC" -type f -name '*.json' ! -name '*.dbg.json' -print0 \
+            | while IFS= read -r -d '' file; do
+                if jq -e 'has("abi") and (.abi | type=="array")' "$file" >/dev/null 2>&1; then
+                  rel="${file#$SRC/}"
+                  mkdir -p "$OUT/$(dirname "$rel")"
+                  cp "$file" "$OUT/$rel"
+                  echo "kept: $rel"
+                else
+                  echo "skip (no abi): ${file#$SRC/}"
+                fi
+              done
+          if [ "$(find "$OUT" -type f | wc -l)" -eq 0 ]; then
+            echo "No ABI JSON files found to upload." >&2
+            exit 1
+          fi
+
+      - name: Upload ABIs to S3 (AWS CLI)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          aws s3 cp /tmp/abi-json "s3://${S3_BUCKET}/${NETWORK}/" \
+            --recursive \
+            --exclude "*.dbg.json" \
+            --content-type "application/json"
+          echo "Uploaded ABI JSONs to s3://${S3_BUCKET}/${NETWORK}/"
