@@ -6,9 +6,11 @@ on:
       action: { required: true, type: string }
       target: { required: true, type: string }
       network: { required: true, type: string }
+      aws_region: { required: false, type: string }
     secrets:
-      rpc: { required: true }          # 调用方传入选定网络的 RPC
-      private_key: { required: true }  # 调用方传入选定网络的私钥
+      rpc: { required: true }
+      private_key: { required: true }
+      sm_secret_id: { required: true }
 
 permissions:
   contents: read
@@ -16,7 +18,7 @@ permissions:
 env:
   NODE_VERSION: 20
   S3_BUCKET: tn-deployment-contract-abis
-  AWS_REGION: us-west-1
+  AWS_REGION: ${{ inputs.aws_region && inputs.aws_region || 'us-west-1' }}
 
 concurrency:
   group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ inputs.network || 'manual' }}
@@ -143,3 +145,33 @@ jobs:
             --exclude "*.dbg.json" \
             --content-type "application/json"
           echo "Uploaded ABI JSONs to s3://${S3_BUCKET}/${NETWORK}/"
+
+      - name: Update contract addresses in Secrets Manager
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          SECRET_ID: ${{ secrets.sm_secret_id }}
+        run: |
+          set -euo pipefail
+          FILE="deployments/${NETWORK}.json"
+          OUT="/tmp/contract-addresses.json"
+          if [ ! -f "$FILE" ]; then
+            echo "Deployment file not found: $FILE" >&2
+            exit 1
+          fi
+          jq '(.entries | last) as $e | {
+                network: $e.network,
+                generatedAt: $e.generatedAt,
+                contracts: ($e.contracts | with_entries({key: .key, value: .value.address}))
+              }' "$FILE" > "$OUT"
+          if [ ! -s "$OUT" ]; then
+            echo "No data written to $OUT" >&2
+            exit 1
+          fi
+          aws secretsmanager put-secret-value \
+            --secret-id "$SECRET_ID" \
+            --secret-string file://"$OUT" \
+            --region "$AWS_DEFAULT_REGION"
+          echo "Updated secret $SECRET_ID with contract addresses from $FILE"
