@@ -107,6 +107,25 @@ jobs:
           echo "NETWORK=${{ inputs.network }}" >> "$GITHUB_ENV"
           printf 'PRIVATE_KEY=%s\n' "$KEY" >> "$GITHUB_ENV"
 
+      - name: Restore deployments state from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          SRC="s3://${S3_BUCKET}/deployments/${NETWORK}.json"
+          DEST="deployments/${NETWORK}.json"
+          if aws s3 ls "$SRC" >/dev/null 2>&1; then
+            aws s3 cp "$SRC" "$DEST"
+            echo "Restored deployments from $SRC"
+          else
+            echo "No existing deployments file at $SRC; starting fresh"
+          fi
+
       - name: Run deployment script
         env:
           RPC: ${{ env.RPC }}
@@ -189,3 +208,20 @@ jobs:
             --secret-string file://"$OUT" \
             --region "$AWS_DEFAULT_REGION"
           echo "Updated secret $SECRET_ID with contract addresses from $FILE"
+
+      - name: Upload deployments state to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          FILE="deployments/${NETWORK}.json"
+          if [ ! -f "$FILE" ]; then
+            echo "Deployment file not found: $FILE" >&2
+            exit 1
+          fi
+          aws s3 cp "$FILE" "s3://${S3_BUCKET}/deployments/${NETWORK}.json"
+          echo "Uploaded deployments state to s3://${S3_BUCKET}/deployments/${NETWORK}.json"
