@@ -20,8 +20,11 @@ on:
         required: true
       private_key:
         required: true
-      sm_secret_id:
+      access_key_id:
         required: true
+      secret_access_key:
+        required: true
+
 
 permissions:
   contents: read
@@ -145,8 +148,8 @@ jobs:
 
       - name: Upload ABIs to S3 (AWS CLI)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACT_DEPLOYER_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACT_DEPLOYER_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
           NETWORK: ${{ inputs.network }}
           S3_BUCKET: ${{ env.S3_BUCKET }}
@@ -159,8 +162,8 @@ jobs:
 
       - name: Update contract addresses in Secrets Manager
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACT_DEPLOYER_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACT_DEPLOYER_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
           NETWORK: ${{ inputs.network }}
           SECRET_ID: ${{ inputs.network }}/treasurenet-tnservices-dataprovider
