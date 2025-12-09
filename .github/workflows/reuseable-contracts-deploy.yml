@@ -145,8 +145,8 @@ jobs:
 
       - name: Upload ABIs to S3 (AWS CLI)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACT_DEPLOYER_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACT_DEPLOYER_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
           NETWORK: ${{ inputs.network }}
           S3_BUCKET: ${{ env.S3_BUCKET }}
@@ -159,11 +159,11 @@ jobs:
 
       - name: Update contract addresses in Secrets Manager
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_OWNER_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_OWNER_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACT_DEPLOYER_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACT_DEPLOYER_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
           NETWORK: ${{ inputs.network }}
-          SECRET_ID: ${{ secrets.sm_secret_id }}
+          SECRET_ID: ${{ inputs.network }}/treasurenet-tnservices-dataprovider
         run: |
           set -euo pipefail
           FILE="deployments/${NETWORK}.json"
