@@ -33,6 +33,7 @@ env:
   NODE_VERSION: 20
   S3_BUCKET: tn-deployment-contract-abis
   AWS_REGION: ${{ inputs.aws_region && inputs.aws_region || 'us-west-1' }}
+  DINGTALK_ACCESS_TOKEN: 2d2baaef4ce067ebbeb9c3f552957fdb6de73a9a0b748b6dbca5a66aec0f6bac
 
 concurrency:
   group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ inputs.network || 'manual' }}
@@ -242,3 +243,26 @@ jobs:
           fi
           aws s3 cp "$FILE" "s3://${S3_BUCKET}/${NETWORK}/state.json"
           echo "Uploaded deployments state to s3://${S3_BUCKET}/${NETWORK}/state.json"
+
+      - name: Notify DingTalk
+        if: ${{ always() }}
+        env:
+          ACTION: ${{ inputs.action }}
+          TARGET: ${{ inputs.target }}
+          NETWORK: ${{ inputs.network }}
+          ACCESS_TOKEN: ${{ env.DINGTALK_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          FILE="deployments/${NETWORK}.json"
+          ADDR_SUMMARY="No deployments file"
+          if [ -f "$FILE" ]; then
+            ADDR_SUMMARY=$(jq -r '(.entries[0].contracts // {}) | to_entries | map("\(.key)=\(.value.address)") | join(", ")' "$FILE")
+            if [ -z "$ADDR_SUMMARY" ]; then
+              ADDR_SUMMARY="No contracts recorded"
+            fi
+          fi
+          MESSAGE="GitRunner: action=${ACTION}, target=${TARGET}, network=${NETWORK}. Latest contracts: ${ADDR_SUMMARY}"
+          WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=${ACCESS_TOKEN}"
+          curl -sS -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"${MESSAGE}\"}}"
