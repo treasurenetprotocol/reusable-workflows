@@ -117,7 +117,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deployments
-          SRC="s3://${S3_BUCKET}/deployments/${NETWORK}.json"
+          SRC="s3://${S3_BUCKET}/${NETWORK}/state.json"
           DEST="deployments/${NETWORK}.json"
           if aws s3 ls "$SRC" >/dev/null 2>&1; then
             aws s3 cp "$SRC" "$DEST"
@@ -143,8 +143,11 @@ jobs:
           set -euo pipefail
           SRC="artifacts/contracts"
           OUT="/tmp/abi-json"
+          FLAT="/tmp/abi-flat"
           rm -rf "$OUT"
+          rm -rf "$FLAT"
           mkdir -p "$OUT"
+          mkdir -p "$FLAT"
           if [ ! -d "$SRC" ]; then
             echo "Artifacts directory not found: $SRC" >&2
             exit 1
@@ -160,6 +163,12 @@ jobs:
                   echo "skip (no abi): ${file#$SRC/}"
                 fi
               done
+          # Flatten ABI filenames to avoid nested paths in S3
+          find "$OUT" -type f -name '*.json' ! -name '*.dbg.json' -print0 \
+            | while IFS= read -r -d '' file; do
+                base="$(basename "$file")"
+                cp "$file" "$FLAT/$base"
+              done
           if [ "$(find "$OUT" -type f | wc -l)" -eq 0 ]; then
             echo "No ABI JSON files found to upload." >&2
             exit 1
@@ -173,11 +182,19 @@ jobs:
           NETWORK: ${{ inputs.network }}
           S3_BUCKET: ${{ env.S3_BUCKET }}
         run: |
-          aws s3 cp /tmp/abi-json "s3://${S3_BUCKET}/${NETWORK}/" \
+          set -euo pipefail
+          DATE="$(date -u +%F)"
+          LATEST="s3://${S3_BUCKET}/${NETWORK}/abis/latest/"
+          DATED="s3://${S3_BUCKET}/${NETWORK}/abis/${DATE}/"
+          aws s3 cp /tmp/abi-flat/ "$LATEST" \
             --recursive \
             --exclude "*.dbg.json" \
             --content-type "application/json"
-          echo "Uploaded ABI JSONs to s3://${S3_BUCKET}/${NETWORK}/"
+          aws s3 cp /tmp/abi-flat/ "$DATED" \
+            --recursive \
+            --exclude "*.dbg.json" \
+            --content-type "application/json"
+          echo "Uploaded ABI JSONs to $LATEST and $DATED"
 
       - name: Update contract addresses in Secrets Manager
         env:
@@ -223,5 +240,5 @@ jobs:
             echo "Deployment file not found: $FILE" >&2
             exit 1
           fi
-          aws s3 cp "$FILE" "s3://${S3_BUCKET}/deployments/${NETWORK}.json"
-          echo "Uploaded deployments state to s3://${S3_BUCKET}/deployments/${NETWORK}.json"
+          aws s3 cp "$FILE" "s3://${S3_BUCKET}/${NETWORK}/state.json"
+          echo "Uploaded deployments state to s3://${S3_BUCKET}/${NETWORK}/state.json"
