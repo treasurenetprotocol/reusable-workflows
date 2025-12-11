@@ -1,0 +1,73 @@
+name: Reusable Run Contract Script
+
+on:
+  workflow_call:
+    inputs:
+      script_path:
+        required: true
+        type: string
+      network:
+        required: true
+        type: string
+    secrets:
+      rpc:
+        required: true
+      private_key:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+  run-script:
+    name: Run ${{ inputs.script_path }} on ${{ inputs.network }}
+    runs-on:
+      - self-hosted
+      - linux
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Remove lockfile and node_modules
+        run: |
+          rm -f package-lock.json
+          rm -rf node_modules
+
+      - name: Install dependencies (fresh lock on runner OS)
+        run: npm install --no-audit --no-fund
+
+      - name: Prepare network env
+        shell: bash
+        run: |
+          RPC="${{ secrets.rpc }}"
+          KEY="${{ secrets.private_key }}"
+
+          if [ -z "$RPC" ]; then
+            echo "RPC is not provided." >&2
+            exit 1
+          fi
+          if [ -z "$KEY" ]; then
+            echo "Private key is not provided." >&2
+            exit 1
+          fi
+
+          echo "RPC=$RPC" >> "$GITHUB_ENV"
+          echo "NETWORK=${{ inputs.network }}" >> "$GITHUB_ENV"
+          printf 'PRIVATE_KEY=%s\n' "$KEY" >> "$GITHUB_ENV"
+
+      - name: Run hardhat script
+        env:
+          RPC: ${{ env.RPC }}
+          PRIVATE_KEY: ${{ env.PRIVATE_KEY }}
+        run: npx hardhat run --network ${{ env.NETWORK }} ${{ inputs.script_path }}
