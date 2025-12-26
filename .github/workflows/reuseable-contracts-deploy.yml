@@ -266,7 +266,7 @@ jobs:
 
       - name: Notify DingTalk
         if: ${{ always() }}
-        uses: ./.github/actions/dingtalk-notify
+        uses: treasurenetprotocol/reusable-workflows/.github/actions/dingtalk-notify@feature/add-contracts-deploy-DEV-749
         with:
           access_token: ${{ env.DINGTALK_ACCESS_TOKEN }}
           content: ${{ steps.ding_msg.outputs.content }}
