@@ -148,6 +148,8 @@ jobs:
           esac
 
           echo "DEPLOY_ENV=${deploy_env}" >> $GITHUB_ENV
+          echo "DEPLOYMENT_PATH=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
+          echo "MAINNET_DEPLOYMENT_PATH=${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
 
       - name: "Fetch Nginx Certificates"
         run: |
@@ -263,9 +265,9 @@ jobs:
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-           mkdir -p /data/treasurenet/${{ inputs.repo-name }}
-           rm -rf /data/treasurenet/${{ inputs.repo-name }}/*
-          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C /data/treasurenet/${{ inputs.repo-name }}
+          mkdir -p "${{ env.DEPLOYMENT_PATH }}"
+          rm -rf "${{ env.DEPLOYMENT_PATH }}"/*
+          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C "${{ env.DEPLOYMENT_PATH }}"
           rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
@@ -302,9 +304,9 @@ jobs:
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
-          mkdir -p /home/ubuntu/treasurenet/${{ inputs.repo-name }}
-           rm -rf /home/ubuntu/treasurenet/${{ inputs.repo-name }}/*
-          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C /home/ubuntu/treasurenet/${{ inputs.repo-name }}
+          mkdir -p "${{ env.MAINNET_DEPLOYMENT_PATH }}"
+          rm -rf "${{ env.MAINNET_DEPLOYMENT_PATH }}"/*
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C "${{ env.MAINNET_DEPLOYMENT_PATH }}"
           rm -rf /home/ubuntu/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
