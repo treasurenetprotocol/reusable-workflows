@@ -216,6 +216,12 @@ jobs:
       - name: "Install Dependencies and Build"
         run: |
           npm install --silent
+          npm run validate:local
+          test -f nginx/conf.d/airdrop-manager-dev.conf
+          test -f nginx/conf.d/airdrop-manager-testnet.conf
+          test -f nginx/conf.d/airdrop-manager-mainnet.conf
+          test -f nginx/conf.d/snippets/airdrop-manager-spa-common.conf
+          test -f nginx/conf.d/snippets/airdrop-manager-proxy-common.conf
           npm run ${{ inputs.build-command }} --silent
 
       - name: "Package Build Artifacts"
