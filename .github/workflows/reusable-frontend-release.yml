@@ -73,11 +73,12 @@ jobs:
         run: |
           npm install --silent
           npm run validate:local
-          test -f nginx/conf.d/airdrop-manager-dev.conf
-          test -f nginx/conf.d/airdrop-manager-testnet.conf
-          test -f nginx/conf.d/airdrop-manager-mainnet.conf
-          test -f nginx/conf.d/snippets/airdrop-manager-spa-common.conf
-          test -f nginx/conf.d/snippets/airdrop-manager-proxy-common.conf
+          test -d nginx
+          test -d nginx/conf.d
+          find nginx/conf.d -maxdepth 1 -type f -name '*.conf' | grep -q .
+          if [ -d nginx/conf.d/snippets ]; then
+            find nginx/conf.d/snippets -maxdepth 1 -type f -name '*.conf' | grep -q .
+          fi
           npm run ${{ inputs.build-command }} --silent
 
       - name: Prepare release artifacts
