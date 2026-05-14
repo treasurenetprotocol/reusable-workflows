@@ -50,13 +50,16 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
   actions: read
 
 jobs:
   package:
     if: ${{ inputs.release-action != 'mainnet-deploy' }}
     runs-on: self-hosted
+    outputs:
+      release-tag: ${{ steps.release-metadata.outputs.release-tag }}
+      release-name: ${{ steps.release-metadata.outputs.release-name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,12 +80,41 @@ jobs:
           tar -zcvf release-artifacts/${{ inputs.repo-name }}.tar.gz -C dist .
           tar -zcvf release-artifacts/${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
+      - name: Compute release metadata
+        id: release-metadata
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          if [ "${{ inputs.release-action }}" = "testnet-release" ]; then
+            release_prefix="testnet-release"
+          else
+            release_prefix="mainnet-package"
+          fi
+
+          release_tag="${release_prefix}-${GITHUB_RUN_NUMBER}-${short_sha}"
+          release_name="${release_prefix} ${GITHUB_RUN_NUMBER} (${short_sha})"
+
+          echo "release-tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release-name=${release_name}" >> "$GITHUB_OUTPUT"
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.repo-name }}-${{ inputs.environment }}-release
           path: release-artifacts
           if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release-metadata.outputs.release-tag }}
+          name: ${{ steps.release-metadata.outputs.release-name }}
+          target_commitish: ${{ github.sha }}
+          draft: ${{ inputs.release-action == 'mainnet-package' }}
+          prerelease: ${{ inputs.release-action == 'testnet-release' }}
+          generate_release_notes: true
+          files: |
+            release-artifacts/${{ inputs.repo-name }}.tar.gz
+            release-artifacts/${{ inputs.repo-name }}_nginx.tar.gz
 
   deploy-testnet:
     if: ${{ inputs.release-action == 'testnet-release' }}
