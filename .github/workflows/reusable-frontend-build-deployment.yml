@@ -230,8 +230,6 @@ jobs:
           tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
-
-
       - name: "Configure SSH Key"
         if: ${{ !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         run: |

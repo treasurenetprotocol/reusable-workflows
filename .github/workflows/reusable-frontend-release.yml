@@ -125,7 +125,7 @@ jobs:
 
   deploy-testnet:
     if: ${{ inputs.release-action == 'testnet-release' }}
-    needs: [ package ]
+    needs: [package]
     uses: treasurenetprotocol/reusable-workflows/.github/workflows/reusable-frontend-build-deployment.yml@chore/inf-111-reusable-frontend-deploy-alignment
     with:
       repo-name: ${{ inputs.repo-name }}
