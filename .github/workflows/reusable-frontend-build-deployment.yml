@@ -37,11 +37,11 @@ on:
         description: 'Private SSH key to connect to EC2'
         required: true
       EC2_USER:
-        description: 'Username for SSH on EC2'
-        required: true
+        description: 'Username for SSH on EC2; optional when the workflow discovers the target automatically'
+        required: false
       EC2_HOST:
-        description: 'EC2 hostname or IP'
-        required: true
+        description: 'EC2 hostname or IP; optional when the workflow discovers the target automatically'
+        required: false
       CLOUDFLARE_API_TOKEN:
         description: 'Cloudflare API token for cache purge'
         required: true
@@ -224,7 +224,7 @@ jobs:
 
 
       - name: "Configure SSH Key"
-        if: ${{ !inputs.isMainnet }}
+        if: ${{ !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
