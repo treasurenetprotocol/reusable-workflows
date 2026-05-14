@@ -90,15 +90,14 @@ jobs:
       - name: Compute release metadata
         id: release-metadata
         run: |
-          short_sha="${GITHUB_SHA::7}"
+          version="$(node -p "require('./package.json').version")"
           if [ "${{ inputs.release-action }}" = "testnet-release" ]; then
-            release_prefix="testnet-release"
+            release_tag="testnet-v${version}"
+            release_name="testnet v${version}"
           else
-            release_prefix="mainnet-package"
+            release_tag="v${version}"
+            release_name="mainnet v${version}"
           fi
-
-          release_tag="${release_prefix}-${GITHUB_RUN_NUMBER}-${short_sha}"
-          release_name="${release_prefix} ${GITHUB_RUN_NUMBER} (${short_sha})"
 
           echo "release-tag=${release_tag}" >> "$GITHUB_OUTPUT"
           echo "release-name=${release_name}" >> "$GITHUB_OUTPUT"
