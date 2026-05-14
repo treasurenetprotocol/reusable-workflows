@@ -31,10 +31,6 @@ on:
         description: 'Workflow run id that produced the package artifact for mainnet deployment'
         required: false
         type: string
-      artifact-name:
-        description: 'Artifact name to package or deploy'
-        required: true
-        type: string
     secrets:
       EC2_SSH_KEY:
         description: 'Private SSH key to connect to EC2'
@@ -84,7 +80,7 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact-name }}
+          name: ${{ inputs.repo-name }}-${{ inputs.environment }}-release
           path: release-artifacts
           if-no-files-found: error
 
@@ -133,7 +129,7 @@ jobs:
       - name: Download packaged artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.artifact-name }}
+          name: ${{ inputs.repo-name }}-${{ inputs.environment }}-release
           path: release-artifacts
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
