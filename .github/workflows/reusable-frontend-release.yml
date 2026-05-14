@@ -218,7 +218,12 @@ jobs:
       - name: Configure SSH for Cloudflare Access
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/tn-mainnet-gha
+          if [ -n "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/tn-mainnet-gha
+          elif [ ! -s ~/.ssh/tn-mainnet-gha ]; then
+            echo "Mainnet SSH key is not available via secret or pre-provisioned runner file."
+            exit 1
+          fi
           chmod 600 ~/.ssh/tn-mainnet-gha
           cat >> ~/.ssh/config << 'EOF'
           Host us-west-1-jump-server.treasurenet.io
