@@ -1,0 +1,252 @@
+name: "Frontend Release"
+
+on:
+  workflow_call:
+    inputs:
+      repo-name:
+        description: 'Name of the repository/artifact'
+        required: true
+        type: string
+      node-version:
+        description: 'Node.js version to use'
+        required: true
+        type: string
+      build-command:
+        description: 'npm build script to run'
+        required: true
+        type: string
+      s3-aws-region:
+        description: 'AWS region for S3 operations'
+        required: true
+        type: string
+      environment:
+        description: 'Release environment: testnet or mainnet'
+        required: true
+        type: string
+      release-action:
+        description: 'Release action: testnet-release, mainnet-package, or mainnet-deploy'
+        required: true
+        type: string
+      package-run-id:
+        description: 'Workflow run id that produced the package artifact for mainnet deployment'
+        required: false
+        type: string
+      artifact-name:
+        description: 'Artifact name to package or deploy'
+        required: true
+        type: string
+    secrets:
+      EC2_SSH_KEY:
+        description: 'Private SSH key to connect to EC2'
+        required: false
+      EC2_USER:
+        description: 'Username for SSH on EC2'
+        required: false
+      EC2_HOST:
+        description: 'EC2 hostname or IP'
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        description: 'Cloudflare API token for cache purge'
+        required: true
+      CLOUDFLARE_ZONE_ID:
+        description: 'Cloudflare zone identifier'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    if: ${{ inputs.release-action != 'mainnet-deploy' }}
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies and build
+        run: |
+          npm install --silent
+          npm run ${{ inputs.build-command }} --silent
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release-artifacts
+          tar -zcvf release-artifacts/${{ inputs.repo-name }}.tar.gz -C dist .
+          tar -zcvf release-artifacts/${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release-artifacts
+          if-no-files-found: error
+
+  deploy-testnet:
+    if: ${{ inputs.release-action == 'testnet-release' }}
+    needs: [ package ]
+    uses: treasurenetprotocol/reusable-workflows/.github/workflows/reusable-frontend-build-deployment.yml@chore/inf-111-reusable-frontend-deploy-alignment
+    with:
+      repo-name: ${{ inputs.repo-name }}
+      node-version: ${{ inputs.node-version }}
+      build-command: ${{ inputs.build-command }}
+      s3-aws-region: ${{ inputs.s3-aws-region }}
+      environment: "testnet"
+      isMainnet: false
+    secrets:
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+  deploy-mainnet:
+    if: ${{ inputs.release-action == 'mainnet-deploy' }}
+    runs-on: self-hosted
+    env:
+      AWS_ROLE_ARN: "arn:aws:iam::471112752664:role/GitHubAction-AssumeRoleWithAction"
+      AWS_REGION: "us-west-1"
+      MAINNET_DEPLOYMENT_PATH: "/home/ubuntu/treasurenet"
+      MAINNET_BUCKET_NAME: "tn-mainnet-deployment-file-archive"
+      MAINNET_SECRET_PREFIX: "mainnet/services"
+      MAINNET_NGINX_PATH: "/home/ubuntu/nginx"
+    steps:
+      - name: Validate deploy inputs
+        run: |
+          if [ -z "${{ inputs.package-run-id }}" ]; then
+            echo "package-run-id is required for mainnet-deploy."
+            exit 1
+          fi
+
+      - name: Set release metadata
+        run: |
+          echo "DATE=$(date '+%Y%m%d')" >> $GITHUB_ENV
+          echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+          echo "DEPLOYMENT_PATH=${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/mainnet" >> $GITHUB_ENV
+
+      - name: Download packaged artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release-artifacts
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.package-run-id }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup cloudflared
+        run: |
+          sudo mkdir -p --mode=0755 /usr/share/keyrings
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+          sudo apt-get update && sudo apt-get install cloudflared
+
+      - name: Fetch nginx certificates
+        run: |
+          secret=$(aws secretsmanager get-secret-value \
+            --secret-id "${{ env.MAINNET_SECRET_PREFIX }}/nginx" \
+            --region ${{ env.AWS_REGION }} \
+            --query SecretString --output text)
+          echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
+          echo "$secret" | jq -r .ssl_key > cloudflare.key
+
+      - name: Discover mainnet EC2 host
+        run: |
+          if [ -n "${{ secrets.EC2_HOST }}" ]; then
+            echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
+          else
+            public_dns=$(aws ec2 describe-instances \
+              --region ${{ env.AWS_REGION }} \
+              --filters "Name=tag:Name,Values=web-service-1-us-west-1" "Name=instance-state-name,Values=running" \
+              --query "Reservations[].Instances[].PublicDnsName" \
+              --output text)
+
+            if [ -z "${public_dns}" ] || [ "${public_dns}" = "None" ]; then
+              echo "Unable to discover mainnet EC2 host automatically."
+              exit 1
+            fi
+
+            echo "EC2_HOST=${public_dns}" >> $GITHUB_ENV
+          fi
+
+      - name: Configure SSH for Cloudflare Access
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/tn-mainnet-gha
+          chmod 600 ~/.ssh/tn-mainnet-gha
+          cat >> ~/.ssh/config << 'EOF'
+          Host us-west-1-jump-server.treasurenet.io
+            ProxyCommand cloudflared access ssh --hostname %h
+            User ec2-user
+            IdentityFile ~/.ssh/tn-mainnet-gha
+            StrictHostKeyChecking no
+            ServerAliveInterval 60
+            ServerAliveCountMax 3
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload packaged release to S3
+        run: |
+          aws s3 cp cloudflare.pem s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem
+          aws s3 cp cloudflare.key s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key
+          aws s3 cp release-artifacts/${{ inputs.repo-name }}.tar.gz s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
+          aws s3 cp release-artifacts/${{ inputs.repo-name }}_nginx.tar.gz s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
+
+      - name: Deploy to mainnet EC2 via bastion
+        run: |
+          ssh us-west-1-jump-server.treasurenet.io <<OUTER
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          mkdir -p /home/ubuntu/nginx/certs
+          aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.pem /home/ubuntu/nginx/certs/cloudflare.pem
+          aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
+
+          aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
+          mkdir -p "${{ env.DEPLOYMENT_PATH }}"
+          rm -rf "${{ env.DEPLOYMENT_PATH }}"/*
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C "${{ env.DEPLOYMENT_PATH }}"
+          rm -rf /home/ubuntu/${{ inputs.repo-name }}.tar.gz
+
+          aws s3 cp s3://${{ env.MAINNET_BUCKET_NAME }}/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz --exclude='nginx.conf' -C /home/ubuntu/nginx/
+          rm -rf /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
+          INNER
+          OUTER
+
+      - name: Restart mainnet nginx
+        run: |
+          ssh us-west-1-jump-server.treasurenet.io <<OUTER
+          ssh -o StrictHostKeyChecking=no -i ~/mainnet-nodes-us-west-1.pem ubuntu@${EC2_HOST} <<INNER
+          cd ${{ env.MAINNET_NGINX_PATH }}
+          sed -i \
+            -e 's#/data/nginx#/home/ubuntu/nginx#g' \
+            -e 's#/data/treasurenet#/home/ubuntu/treasurenet#g' \
+            docker-compose.yaml
+          if docker compose ps | grep -q Up; then
+            docker compose restart
+          else
+            docker compose up -d
+          fi
+          INNER
+          OUTER
+
+      - name: Purge Cloudflare cache
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data '{"purge_everything":true}'
