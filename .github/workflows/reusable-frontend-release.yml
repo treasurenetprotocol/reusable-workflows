@@ -92,11 +92,11 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           if [ "${{ inputs.release-action }}" = "testnet-release" ]; then
-            release_tag="testnet-v${version}"
-            release_name="testnet v${version}"
+            release_tag="testnet-v${version}-build.${GITHUB_RUN_NUMBER}"
+            release_name="testnet v${version} build ${GITHUB_RUN_NUMBER}"
           else
-            release_tag="v${version}"
-            release_name="mainnet v${version}"
+            release_tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+            release_name="mainnet v${version} build ${GITHUB_RUN_NUMBER}"
           fi
 
           echo "release-tag=${release_tag}" >> "$GITHUB_OUTPUT"
