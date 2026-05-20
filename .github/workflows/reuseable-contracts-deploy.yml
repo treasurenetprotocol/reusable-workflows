@@ -32,6 +32,7 @@ permissions:
 env:
   NODE_VERSION: 20
   S3_BUCKET: tn-deployment-contract-abis
+  CONTRACT_STATE_SECRET_SUFFIX: treasurenet-contract-deployments
   AWS_REGION: ${{ inputs.aws_region && inputs.aws_region || 'us-west-1' }}
   DINGTALK_ACCESS_TOKEN: 2d2baaef4ce067ebbeb9c3f552957fdb6de73a9a0b748b6dbca5a66aec0f6bac
 
@@ -197,17 +198,20 @@ jobs:
             --content-type "application/json"
           echo "Uploaded ABI JSONs to $LATEST and $DATED"
 
-      - name: Update contract addresses in Secrets Manager
+      - name: Update contract deployment state in Secrets Manager
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
           NETWORK: ${{ inputs.network }}
-          SECRET_ID: ${{ inputs.network }}/treasurenet-tnservices-dataprovider
+          # Contract deployment state must not overwrite the dataprovider runtime
+          # secret. Dataprovider deployment expects a flat env-shaped payload,
+          # while this workflow writes structured deployment-state JSON.
+          SECRET_ID: ${{ inputs.network }}/${{ env.CONTRACT_STATE_SECRET_SUFFIX }}
         run: |
           set -euo pipefail
           FILE="deployments/${NETWORK}.json"
-          OUT="/tmp/contract-addresses.json"
+          OUT="/tmp/contract-deployment-state.json"
           if [ ! -f "$FILE" ]; then
             echo "Deployment file not found: $FILE" >&2
             exit 1
