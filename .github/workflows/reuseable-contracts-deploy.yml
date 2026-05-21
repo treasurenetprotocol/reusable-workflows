@@ -197,36 +197,6 @@ jobs:
             --content-type "application/json"
           echo "Uploaded ABI JSONs to $LATEST and $DATED"
 
-      - name: Update contract addresses in Secrets Manager
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
-          NETWORK: ${{ inputs.network }}
-          SECRET_ID: ${{ inputs.network }}/treasurenet-tnservices-dataprovider
-        run: |
-          set -euo pipefail
-          FILE="deployments/${NETWORK}.json"
-          OUT="/tmp/contract-addresses.json"
-          if [ ! -f "$FILE" ]; then
-            echo "Deployment file not found: $FILE" >&2
-            exit 1
-          fi
-          jq '(.entries | last) as $e | {
-                network: $e.network,
-                generatedAt: $e.generatedAt,
-                contracts: ($e.contracts | with_entries({key: .key, value: .value.address}))
-              }' "$FILE" > "$OUT"
-          if [ ! -s "$OUT" ]; then
-            echo "No data written to $OUT" >&2
-            exit 1
-          fi
-          aws secretsmanager put-secret-value \
-            --secret-id "$SECRET_ID" \
-            --secret-string file://"$OUT" \
-            --region "$AWS_DEFAULT_REGION"
-          echo "Updated secret $SECRET_ID with contract addresses from $FILE"
-
       - name: Upload deployments state to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
