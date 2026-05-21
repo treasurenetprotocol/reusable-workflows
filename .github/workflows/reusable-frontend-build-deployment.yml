@@ -21,6 +21,10 @@ on:
         description: 'AWS region for S3 operations'
         required: true
         type: string
+      environment:
+        description: 'Explicit deployment environment: dev, testnet, or mainnet'
+        required: false
+        type: string
       isMainnet:
         description: 'Flag to indicate mainnet deployment'
         required: true
@@ -33,11 +37,11 @@ on:
         description: 'Private SSH key to connect to EC2'
         required: true
       EC2_USER:
-        description: 'Username for SSH on EC2'
-        required: true
+        description: 'Username for SSH on EC2; optional when the workflow discovers the target automatically'
+        required: false
       EC2_HOST:
-        description: 'EC2 hostname or IP'
-        required: true
+        description: 'EC2 hostname or IP; optional when the workflow discovers the target automatically'
+        required: false
       CLOUDFLARE_API_TOKEN:
         description: 'Cloudflare API token for cache purge'
         required: true
@@ -102,7 +106,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: "Configure AWS Credentials (Dev/Test)"
-        if: ${{ !inputs.isDapp && !inputs.isMainnet }}
+        if: ${{ !inputs.isDapp && !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
@@ -116,78 +120,109 @@ jobs:
           aws-region: ${{ inputs.s3-aws-region }}
 
       - name: "Configure AWS Credentials (Mainnet)"
-        if: ${{ inputs.isMainnet }}
+        if: ${{ inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet) }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: "Resolve Deployment Environment"
+        run: |
+          deploy_env="${{ inputs.environment }}"
+          if [ -z "${deploy_env}" ]; then
+            if [ "${{ inputs.isMainnet }}" = "true" ]; then
+              deploy_env="mainnet"
+            else
+              deploy_env="dev"
+            fi
+          fi
+
+          case "${deploy_env}" in
+            dev|testnet|mainnet)
+              ;;
+            *)
+              echo "Unsupported deployment environment: ${deploy_env}"
+              exit 1
+              ;;
+          esac
+
+          echo "DEPLOY_ENV=${deploy_env}" >> $GITHUB_ENV
+          echo "DEPLOYMENT_PATH=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
+          echo "MAINNET_DEPLOYMENT_PATH=${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
+
       - name: "Fetch Nginx Certificates"
         run: |
-          # Determine secret prefix based on environment
-          if [ "${{ inputs.isMainnet }}" = "true" ]; then
-            prefix=${{ env.MAINNET_SECRET_PREFIX }}
-          elif [ -z "${{ secrets.EC2_HOST }}" ]; then
-            prefix=${{ env.DEV_SECRET_PREFIX }}
-          else
-            prefix=${{ env.TESTNET_SECRET_PREFIX }}
-          fi
+          secret_region="${{ inputs.s3-aws-region }}"
           if [ "${{ inputs.isDapp }}" = "true" ]; then
             prefix=${{ env.DAPP_SECRET_PREFIX }}
+          else
+            case "${DEPLOY_ENV}" in
+              mainnet)
+                prefix=${{ env.MAINNET_SECRET_PREFIX }}
+                secret_region="${{ env.AWS_REGION }}"
+                ;;
+              testnet)
+                prefix=${{ env.TESTNET_SECRET_PREFIX }}
+                ;;
+              *)
+                prefix=${{ env.DEV_SECRET_PREFIX }}
+                ;;
+            esac
           fi
+
           # Retrieve and decode
           secret=$(aws secretsmanager get-secret-value \
             --secret-id "${prefix}/nginx" \
-            --region ${{ inputs.s3-aws-region }} \
+            --region "${secret_region}" \
             --query SecretString --output text)
           echo "$secret" | jq -r .ssl_certificate > cloudflare.pem
           echo "$secret" | jq -r .ssl_key         > cloudflare.key
 
       - name: "Discover EC2 Instance"
         run: |
-          # Debug: print EC2_HOST as seen at the start (could be set via matrix/env)
-          echo "DEBUG: Before detection, EC2_HOST='${{ env.EC2_HOST }}'"
-
-          # Only query AWS if EC2_HOST is not already defined
-          if [ -z "${{ secrets.EC2_HOST }}" ]; then
-            echo "DEBUG: EC2_HOST is empty, querying AWS EC2..."
-
-            if [ "${{ inputs.isMainnet }}" = "true" ]; then
-              # Query mainnet EC2 by specific tag for its public DNS
+          if [ -n "${{ secrets.EC2_HOST }}" ]; then
+            echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
+          elif [ "${DEPLOY_ENV}" = "mainnet" ]; then
               public_dns=$(aws ec2 describe-instances \
                 --region ${{ env.AWS_REGION }} \
                 --filters "Name=tag:Name,Values=web-service-1-us-west-1" "Name=instance-state-name,Values=running" \
                 --query "Reservations[].Instances[].PublicDnsName" \
                 --output text)
 
-              echo "DEBUG: AWS returned PublicDnsName='${public_dns}'"
+              if [ -z "${public_dns}" ] || [ "${public_dns}" = "None" ]; then
+                echo "Unable to discover mainnet EC2 host automatically."
+                exit 1
+              fi
+
               echo "EC2_HOST=${public_dns}" >> $GITHUB_ENV
               echo "EC2_USER=ubuntu" >> $GITHUB_ENV
+          else
+            public_ip=$(aws ec2 describe-instances \
+              --region ${{ inputs.s3-aws-region }} \
+              --filters "Name=tag:Name,Values=${{ env.SERVICE_TAG }}" "Name=instance-state-name,Values=running" \
+              --query "Reservations[].Instances[].PublicIpAddress" \
+              --output text)
 
-            else
-              # Query dev/test EC2 by general tag for its public IP
-              public_ip=$(aws ec2 describe-instances \
-                --region ${{ inputs.s3-aws-region }} \
-                --filters "Name=tag:Name,Values=${{ env.SERVICE_TAG }}" "Name=instance-state-name,Values=running" \
-                --query "Reservations[].Instances[].PublicIpAddress" \
-                --output text)
-
-              echo "DEBUG: AWS returned PublicIpAddress='${public_ip}'"
-              echo "EC2_HOST=${public_ip}" >> $GITHUB_ENV
-              echo "EC2_USER=ubuntu" >> $GITHUB_ENV
-
+            if [ -z "${public_ip}" ] || [ "${public_ip}" = "None" ]; then
+              echo "Unable to discover ${DEPLOY_ENV} EC2 host automatically."
+              exit 1
             fi
 
-          else
-            echo "DEBUG: EC2_HOST already set to '${{ env.EC2_HOST }}', skipping AWS query"
+            echo "EC2_HOST=${public_ip}" >> $GITHUB_ENV
+            echo "EC2_USER=ubuntu" >> $GITHUB_ENV
           fi
-
-
-
 
       - name: "Install Dependencies and Build"
         run: |
           npm install --silent
+          npm run validate:local
+          test -d nginx
+          test -d nginx/conf.d
+          find nginx/conf.d -maxdepth 1 -type f -name '*.conf' | grep -q .
+          if [ -d nginx/conf.d/snippets ]; then
+            find nginx/conf.d/snippets -maxdepth 1 -type f -name '*.conf' | grep -q .
+          fi
           npm run ${{ inputs.build-command }} --silent
 
       - name: "Package Build Artifacts"
@@ -195,10 +230,8 @@ jobs:
           tar -zcvf ./${{ inputs.repo-name }}.tar.gz -C dist .
           tar -zcvf ./${{ inputs.repo-name }}_nginx.tar.gz -C nginx .
 
-
-
       - name: "Configure SSH Key"
-        if: ${{ !inputs.isMainnet }}
+        if: ${{ !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
@@ -209,7 +242,7 @@ jobs:
           # Choose bucket based on environment
           if [ "${{ inputs.isDapp }}" = "true" ]; then
             bucket=${{ env.DAPP_BUCKET_NAME }}
-          elif [ "${{ inputs.isMainnet }}" = "true" ]; then
+          elif [ "${DEPLOY_ENV}" = "mainnet" ]; then
             bucket=${{ env.MAINNET_BUCKET_NAME }}
           else
             bucket=${{ env.BUCKET_NAME }}
@@ -220,15 +253,8 @@ jobs:
           aws s3 cp ./${{ inputs.repo-name }}.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz
           aws s3 cp ./${{ inputs.repo-name }}_nginx.tar.gz s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz
           
-      - name: “Override EC2_HOST from Secret if present”
-        run: |
-          # If secrets.EC2_HOST is set, write it into GITHUB_ENV so later steps see it
-          if [ -n "${{ secrets.EC2_HOST }}" ]; then
-            echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
-          fi
-
       - name: "Deploy to Dev/Test EC2"
-        if: ${{ !inputs.isMainnet }}
+        if: ${{ !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         run: |
           # 1) Set local variables for path & bucket
           if [ "${{ inputs.isDapp }}" = "true" ]; then
@@ -244,9 +270,9 @@ jobs:
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /data/nginx/certs/cloudflare.key
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
-           mkdir -p /data/treasurenet/${{ inputs.repo-name }}
-           rm -rf /data/treasurenet/${{ inputs.repo-name }}/*
-          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C /data/treasurenet/${{ inputs.repo-name }}
+          mkdir -p "${{ env.DEPLOYMENT_PATH }}"
+          rm -rf "${{ env.DEPLOYMENT_PATH }}"/*
+          tar -zxf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz -C "${{ env.DEPLOYMENT_PATH }}"
           rm -rf /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://$bucket/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/${{ env.EC2_USER }}/${{ inputs.repo-name }}_nginx.tar.gz
@@ -256,9 +282,16 @@ jobs:
           EOF
 
       - name: "Configure SSH for Cloudflare Access"
-        if: ${{ inputs.isMainnet }}
+        if: ${{ inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet) }}
         run: |
           mkdir -p ~/.ssh
+          if [ -n "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/tn-mainnet-gha
+          elif [ ! -s ~/.ssh/tn-mainnet-gha ]; then
+            echo "Mainnet SSH key is not available via secret or pre-provisioned runner file."
+            exit 1
+          fi
+          chmod 600 ~/.ssh/tn-mainnet-gha
           cat >> ~/.ssh/config << 'EOF'
           Host us-west-1-jump-server.treasurenet.io
             ProxyCommand cloudflared access ssh --hostname %h
@@ -271,7 +304,7 @@ jobs:
           chmod 600 ~/.ssh/config
 
       - name: "Deploy to Mainnet EC2 via Bastion"
-        if: ${{ inputs.isMainnet }}
+        if: ${{ inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet) }}
         run: |
           # SSH into bastion, then into target host, and unpack
           ssh us-west-1-jump-server.treasurenet.io <<OUTER
@@ -281,9 +314,9 @@ jobs:
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/cloudflare.key /home/ubuntu/nginx/certs/cloudflare.key
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}.tar.gz
-          mkdir -p /home/ubuntu/treasurenet/${{ inputs.repo-name }}
-           rm -rf /home/ubuntu/treasurenet/${{ inputs.repo-name }}/*
-          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C /home/ubuntu/treasurenet/${{ inputs.repo-name }}
+          mkdir -p "${{ env.MAINNET_DEPLOYMENT_PATH }}"
+          rm -rf "${{ env.MAINNET_DEPLOYMENT_PATH }}"/*
+          tar -zxf /home/ubuntu/${{ inputs.repo-name }}.tar.gz -C "${{ env.MAINNET_DEPLOYMENT_PATH }}"
           rm -rf /home/ubuntu/${{ inputs.repo-name }}.tar.gz
 
           aws s3 cp s3://tn-mainnet-deployment-file-archive/${{ inputs.repo-name }}/${{ env.DATE }}/${{ inputs.repo-name }}_nginx_${{ env.TIME }}.tar.gz /home/ubuntu/${{ inputs.repo-name }}_nginx.tar.gz
@@ -294,7 +327,7 @@ jobs:
           OUTER
 
       - name: "Restart Nginx (Dev/Test)"
-        if: ${{ !inputs.isMainnet }}
+        if: ${{ !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
         run: |
           ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST <<EOF
           cd ${{ env.NGINX_PATH }}
@@ -306,7 +339,7 @@ jobs:
           EOF
 
       - name: "Restart Nginx (Mainnet)"
-        if: ${{ inputs.isMainnet }}
+        if: ${{ inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet) }}
         run: |
           # First hop: to Bastion
           ssh us-west-1-jump-server.treasurenet.io <<OUTER

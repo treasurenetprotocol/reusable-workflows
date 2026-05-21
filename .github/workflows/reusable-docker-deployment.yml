@@ -259,4 +259,3 @@ jobs:
 
       - name: Clean up Docker credentials
         run: rm -f /home/runner/.docker/config.json
-
