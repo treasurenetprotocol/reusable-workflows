@@ -1,0 +1,417 @@
+title = "TreasureNet shared secret scanning rules"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global TN allowlist for examples, generated files, and public identifiers"
+paths = [
+  '''(^|/)security/gitleaks/tn-gitleaks\.toml$''',
+  '''(^|/)security/gitleaks/test-fixtures/generate-positive-fixture\.sh$''',
+  '''(^|/)docs/example/''',
+  '''(^|/)\.env\.example$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)yarn\.lock$''',
+  '''(^|/)go\.sum$''',
+  '''(^|/)Cargo\.lock$'''
+]
+regexes = [
+  '''(?i)(fake|dummy|example|placeholder|not-a-real-secret|changeme|test-only)''',
+  '''0x[a-fA-F0-9]{40}'''
+]
+
+[[rules]]
+id = "tn-evm-private-key"
+description = "EVM-style 32-byte private key assigned to a sensitive variable"
+severity = "critical"
+regex = '''(?i)(private[_-]?key|deployer[_-]?key|signer[_-]?key|wallet[_-]?key|owner[_-]?key|operator[_-]?key|relayer[_-]?key|oracle[_-]?key|faucet[_-]?key|treasury[_-]?key|admin[_-]?key)\s*[:=]\s*['"]?(0x)?[a-f0-9]{64}['"]?'''
+keywords = [
+  "privatekey",
+  "private_key",
+  "deployer",
+  "signer",
+  "relayer",
+  "oracle",
+  "faucet",
+  "treasury"
+]
+
+[[rules]]
+id = "tn-bip39-mnemonic-assignment"
+description = "BIP39 mnemonic assigned to a seed or wallet variable"
+severity = "critical"
+regex = '''(?i)(mnemonic|seed[_-]?phrase|recovery[_-]?phrase)\s*[:=]\s*['"]?([a-z]{3,12}\s+){11,23}[a-z]{3,12}['"]?'''
+keywords = [
+  "mnemonic",
+  "seed phrase",
+  "recovery phrase"
+]
+
+[[rules]]
+id = "tn-wallet-keystore-json"
+description = "Wallet keystore JSON containing encrypted private key material"
+severity = "critical"
+regex = '''(?i)"crypto"\s*:\s*\{[\s\S]{0,1200}"ciphertext"\s*:\s*"[a-f0-9]{64,}"'''
+keywords = [
+  "ciphertext",
+  "crypto",
+  "keystore"
+]
+
+[[rules]]
+id = "tn-pem-private-key"
+description = "PEM or OpenSSH private key block"
+severity = "critical"
+regex = '''-----BEGIN (RSA |DSA |EC |OPENSSH |PGP |ENCRYPTED |)?PRIVATE KEY-----'''
+keywords = [
+  "PRIVATE KEY"
+]
+
+[[rules]]
+id = "tn-aws-access-key-id"
+description = "AWS access key ID"
+severity = "high"
+regex = '''\b(A3T[A-Z0-9]|AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA)[A-Z0-9]{16}\b'''
+keywords = [
+  "AKIA",
+  "ASIA"
+]
+
+[[rules]]
+id = "tn-aws-secret-access-key"
+description = "AWS secret access key assigned to a sensitive variable"
+severity = "critical"
+regex = '''(?i)(aws_)?secret(_access)?_key\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}['"]?'''
+keywords = [
+  "secret_access_key",
+  "aws_secret"
+]
+
+[[rules]]
+id = "tn-gcp-service-account-private-key"
+description = "GCP service account private key JSON"
+severity = "critical"
+regex = '''(?s)"type"\s*:\s*"service_account".{0,2000}"private_key"\s*:\s*"-----BEGIN PRIVATE KEY-----'''
+keywords = [
+  "service_account",
+  "private_key"
+]
+
+[[rules]]
+id = "tn-azure-client-secret"
+description = "Azure client secret assigned to a sensitive variable"
+severity = "high"
+regex = '''(?i)(azure|aad|tenant).{0,40}(client[_-]?secret|app[_-]?secret|password)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "azure",
+  "client_secret"
+]
+
+[[rules]]
+id = "tn-github-token"
+description = "GitHub personal, fine-grained, app, or refresh token"
+severity = "high"
+regex = '''\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{30,255}\b'''
+keywords = [
+  "ghp_",
+  "github_pat"
+]
+
+[[rules]]
+id = "tn-github-app-private-key"
+description = "GitHub App private key"
+severity = "critical"
+regex = '''(?s)-----BEGIN RSA PRIVATE KEY-----.{0,2000}github.{0,2000}app'''
+keywords = [
+  "github",
+  "PRIVATE KEY"
+]
+
+[[rules]]
+id = "tn-npm-token"
+description = "npm package publishing token"
+severity = "high"
+regex = '''\bnpm_[A-Za-z0-9]{36}\b'''
+keywords = [
+  "npm_"
+]
+
+[[rules]]
+id = "tn-package-registry-token-assignment"
+description = "Package registry token assignment"
+severity = "high"
+regex = '''(?i)(npm|yarn|pnpm|pypi|twine|maven|gradle|rubygems|nuget|cargo|registry).{0,30}(token|password|secret|key)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "registry",
+  "token",
+  "npm",
+  "pypi"
+]
+
+[[rules]]
+id = "tn-docker-registry-auth"
+description = "Docker or container registry credential"
+severity = "high"
+regex = '''(?i)(docker|ecr|ghcr|gcr|acr|registry).{0,40}(password|token|auth)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "docker",
+  "registry",
+  "ghcr",
+  "ecr"
+]
+
+[[rules]]
+id = "tn-kubernetes-token-or-kubeconfig"
+description = "Kubernetes kubeconfig token or client credential"
+severity = "critical"
+regex = '''(?i)(client-key-data|token)\s*:\s*[A-Za-z0-9._~+/=-]{40,}'''
+keywords = [
+  "client-key-data",
+  "kubeconfig"
+]
+
+[[rules]]
+id = "tn-terraform-cloud-token"
+description = "Terraform Cloud or IaC token"
+severity = "high"
+regex = '''(?i)(terraform|tf_cloud|tfc).{0,40}(token|api[_-]?key)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "terraform",
+  "tfc",
+  "token"
+]
+
+[[rules]]
+id = "tn-cloudflare-token"
+description = "Cloudflare API token"
+severity = "high"
+regex = '''(?i)(cloudflare|cf).{0,40}(api[_-]?token|global[_-]?key|account[_-]?token)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "cloudflare",
+  "api_token"
+]
+
+[[rules]]
+id = "tn-slack-token"
+description = "Slack bot, app, user, or webhook token"
+severity = "high"
+regex = '''\bxox[baprs]-[A-Za-z0-9-]{20,}\b'''
+keywords = [
+  "xoxb-",
+  "xoxa-",
+  "xoxp-"
+]
+
+[[rules]]
+id = "tn-slack-webhook"
+description = "Slack webhook URL"
+severity = "high"
+regex = '''https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{20,}'''
+keywords = [
+  "hooks.slack.com"
+]
+
+[[rules]]
+id = "tn-discord-webhook"
+description = "Discord webhook URL"
+severity = "high"
+regex = '''https://discord(?:app)?\.com/api/webhooks/[0-9]{17,20}/[A-Za-z0-9._-]{50,}'''
+keywords = [
+  "discord.com/api/webhooks",
+  "discordapp.com/api/webhooks"
+]
+
+[[rules]]
+id = "tn-telegram-bot-token"
+description = "Telegram bot token"
+severity = "high"
+regex = '''\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b'''
+keywords = [
+  "telegram",
+  "bot"
+]
+
+[[rules]]
+id = "tn-sendgrid-token"
+description = "SendGrid API token"
+severity = "high"
+regex = '''\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b'''
+keywords = [
+  "SG."
+]
+
+[[rules]]
+id = "tn-mailgun-token"
+description = "Mailgun API key"
+severity = "high"
+regex = '''\bkey-[A-Za-z0-9]{32}\b'''
+keywords = [
+  "mailgun",
+  "key-"
+]
+
+[[rules]]
+id = "tn-sentry-auth-token"
+description = "Sentry auth token assignment"
+severity = "high"
+regex = '''(?i)(sentry).{0,40}(auth[_-]?token|api[_-]?token)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "sentry",
+  "auth_token"
+]
+
+[[rules]]
+id = "tn-observability-token"
+description = "Observability provider token assignment"
+severity = "high"
+regex = '''(?i)(grafana|datadog|newrelic|honeycomb|pagerduty|opsgenie|logtail|loki|prometheus).{0,40}(token|api[_-]?key|password|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "grafana",
+  "datadog",
+  "newrelic",
+  "api_key"
+]
+
+[[rules]]
+id = "tn-notion-linear-token"
+description = "Notion or Linear token assignment"
+severity = "high"
+regex = '''(?i)(notion|linear).{0,40}(token|api[_-]?key|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "notion",
+  "linear",
+  "api_key"
+]
+
+[[rules]]
+id = "tn-database-url-with-password"
+description = "Database or cache URL containing credentials"
+severity = "high"
+regex = '''(?i)\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqp|amqps|kafka|elasticsearch|opensearch|clickhouse)://[^/\s:@]+:[^@\s]+@[^/\s]+'''
+keywords = [
+  "postgres://",
+  "postgresql://",
+  "mysql://",
+  "mongodb://",
+  "redis://",
+  "amqp://"
+]
+
+[[rules]]
+id = "tn-jwt-secret-assignment"
+description = "JWT signing secret assignment"
+severity = "high"
+regex = '''(?i)(jwt|token).{0,30}(secret|signing[_-]?key|private[_-]?key)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "jwt",
+  "signing",
+  "secret"
+]
+
+[[rules]]
+id = "tn-session-cookie-secret"
+description = "Session, cookie, CSRF, or HMAC secret assignment"
+severity = "high"
+regex = '''(?i)(session|cookie|csrf|hmac|webhook|encryption|encrypt|decrypt).{0,40}(secret|key|salt|password)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "session",
+  "cookie",
+  "csrf",
+  "hmac",
+  "secret"
+]
+
+[[rules]]
+id = "tn-oauth-client-secret"
+description = "OAuth/OIDC/SAML client secret assignment"
+severity = "high"
+regex = '''(?i)(oauth|oidc|saml|client).{0,40}(client[_-]?secret|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "client_secret",
+  "oauth",
+  "oidc"
+]
+
+[[rules]]
+id = "tn-basic-auth-url"
+description = "HTTP URL containing basic-auth credentials"
+severity = "high"
+regex = '''https?://[^/\s:@]+:[^@\s]+@[^/\s]+'''
+keywords = [
+  "http://",
+  "https://"
+]
+
+[[rules]]
+id = "tn-stripe-secret-key"
+description = "Stripe secret or restricted API key"
+severity = "high"
+regex = '''\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}\b'''
+keywords = [
+  "sk_live_",
+  "rk_live_",
+  "sk_test_"
+]
+
+[[rules]]
+id = "tn-blockchain-provider-key"
+description = "Blockchain infrastructure provider API key assignment"
+severity = "high"
+regex = '''(?i)(alchemy|infura|quicknode|moralis|walletconnect|etherscan|polygonscan|arbiscan|basescan|thegraph|graph).{0,40}(api[_-]?key|token|secret|project[_-]?id)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "alchemy",
+  "infura",
+  "quicknode",
+  "etherscan",
+  "walletconnect"
+]
+
+[[rules]]
+id = "tn-ai-provider-key"
+description = "AI, vector database, or model provider API key assignment"
+severity = "high"
+regex = '''(?i)(openai|anthropic|gemini|cohere|huggingface|replicate|pinecone|weaviate|qdrant).{0,40}(api[_-]?key|token|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "openai",
+  "anthropic",
+  "pinecone",
+  "api_key"
+]
+
+[[rules]]
+id = "tn-firebase-or-push-secret"
+description = "Firebase, APNs, or push notification private/server key"
+severity = "high"
+regex = '''(?i)(firebase|fcm|apns|push).{0,40}(server[_-]?key|private[_-]?key|auth[_-]?key|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{20,}['"]'''
+keywords = [
+  "firebase",
+  "fcm",
+  "apns"
+]
+
+[[rules]]
+id = "tn-mobile-signing-secret"
+description = "Mobile signing, keystore, provisioning, or store credential"
+severity = "critical"
+regex = '''(?i)(android|ios|keystore|provisioning|appstore|googleplay|fastlane).{0,50}(password|private[_-]?key|api[_-]?key|issuer[_-]?id|key[_-]?id|secret)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{16,}['"]'''
+keywords = [
+  "keystore",
+  "fastlane",
+  "appstore",
+  "googleplay"
+]
+
+[[rules]]
+id = "tn-generic-sensitive-assignment"
+description = "Generic sensitive variable assignment with high-entropy value"
+severity = "medium"
+regex = '''(?i)(secret|token|api[_-]?key|private[_-]?key|password|passwd|pwd|credential|auth[_-]?key)\s*[:=]\s*['"][A-Za-z0-9._~+/=-]{32,}['"]'''
+entropy = 3.7
+keywords = [
+  "secret",
+  "token",
+  "api_key",
+  "password",
+  "credential"
+]
