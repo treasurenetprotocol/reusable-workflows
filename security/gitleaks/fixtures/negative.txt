@@ -1,0 +1,10 @@
+# Fake-only negative examples for values that should not block by default.
+
+PUBLIC_EVM_ADDRESS=0x1111111111111111111111111111111111111111
+PUBLIC_TX_HASH=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+PUBLIC_BLOCK_HASH=0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+PUBLIC_KEY=03aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SENTRY_DSN=https://public@example.ingest.sentry.io/123456
+ENV_EXAMPLE_VALUE=placeholder
+API_KEY=not-a-real-secret
+PASSWORD=changeme
