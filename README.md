@@ -58,7 +58,7 @@ jobs:
 
 PR and push modes require their native GitHub event payloads so the reusable workflow can derive an accurate incremental commit range. Do not add a history dispatch to the organization incremental caller; use the separately controlled INF-164 process for historical inventory.
 
-GitHub native secret scanning push protection is the receive-time control for provider-supported secret types. The Actions `push` event runs after GitHub accepts a commit and adds the broader TN-specific detection layer. The default-branch ruleset requires `secret-scan / SecurityScan`, so high and critical new findings cannot be merged through a pull request.
+GitHub native secret scanning push protection is the receive-time control for provider-supported secret types. The Actions `push` event runs after GitHub accepts a commit and adds the broader TN-specific detection layer. After the caller is present on the default branch, activate the staged default-branch ruleset requiring `secret-scan / SecurityScan`, so high and critical new findings cannot be merged through a pull request. Activating that rule before the caller is installed can block existing pull requests that cannot emit the new check.
 
 Slack secrets are optional. When both `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID_GITHUB_NOTIFICATION` are present, failures send a sanitized notification with counts and a link to the GitHub Actions run.
 
