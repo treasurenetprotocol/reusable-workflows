@@ -52,7 +52,7 @@ keywords = [
 id = "tn-wallet-keystore-json"
 description = "Wallet keystore JSON containing encrypted private key material"
 severity = "critical"
-regex = '''(?i)"crypto"\s*:\s*\{[\s\S]{0,1200}"ciphertext"\s*:\s*"[a-f0-9]{64,}"'''
+regex = '''(?i)"crypto"\s*:\s*\{[\s\S]{0,1000}"ciphertext"\s*:\s*"[a-f0-9]{64,}"'''
 keywords = [
   "ciphertext",
   "crypto",
@@ -92,7 +92,7 @@ keywords = [
 id = "tn-gcp-service-account-private-key"
 description = "GCP service account private key JSON"
 severity = "critical"
-regex = '''(?s)"type"\s*:\s*"service_account".{0,2000}"private_key"\s*:\s*"-----BEGIN PRIVATE KEY-----'''
+regex = '''(?s)"type"\s*:\s*"service_account".{0,1000}"private_key"\s*:\s*"-----BEGIN PRIVATE KEY-----'''
 keywords = [
   "service_account",
   "private_key"
@@ -122,7 +122,7 @@ keywords = [
 id = "tn-github-app-private-key"
 description = "GitHub App private key"
 severity = "critical"
-regex = '''(?s)-----BEGIN RSA PRIVATE KEY-----.{0,2000}github.{0,2000}app'''
+regex = '''(?s)-----BEGIN RSA PRIVATE KEY-----.{0,1000}github.{0,1000}app'''
 keywords = [
   "github",
   "PRIVATE KEY"
