@@ -25,6 +25,8 @@ Supported scan modes:
 - `push`: scans new pushed commits and fails on findings at or above `fail_threshold`.
 - `history`: scans available repository history for inventory and does not block by default.
 
+For a newly created branch where GitHub does not provide a usable `before` SHA, push mode derives the incremental range from the merge-base with the repository's default branch. If no merge-base exists, it scans only `HEAD`. PR and push modes skip unrelated refs; only history mode intentionally scans the complete fetched history.
+
 The workflow intentionally does not print raw secret values in logs, step summaries, artifacts, or Slack notifications. Summaries include scanner engine, severity, rule, path, line, and commit where available. Every successful scan also uploads a 30-day `tn-secret-scan-<run-id>` artifact containing the Markdown summary and the complete sanitized JSON inventory. Raw Gitleaks and TruffleHog reports are never uploaded. Confirmed secrets require rotation, revocation, migration, or abandonment; deleting a file or rewriting history is not sufficient remediation by itself.
 
 ### Minimal Caller
