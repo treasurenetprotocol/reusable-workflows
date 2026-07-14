@@ -40,22 +40,12 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      scan_mode:
-        description: "Use history for manual inventory scans."
-        required: true
-        default: history
-        type: choice
-        options:
-          - history
-          - pr
-          - push
 
 jobs:
   secret_scan:
     uses: treasurenetprotocol/reusable-workflows/.github/workflows/reusable-secrets-scanning.yml@main
     with:
-      scan_mode: ${{ github.event_name == 'workflow_dispatch' && inputs.scan_mode || github.event_name == 'pull_request' && 'pr' || 'push' }}
+      scan_mode: ${{ github.event_name == 'workflow_dispatch' && 'history' || github.event_name == 'pull_request' && 'pr' || 'push' }}
       fetch_depth: 0
       fail_threshold: high
       config_ref: main
@@ -63,6 +53,8 @@ jobs:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL_ID_GITHUB_NOTIFICATION: ${{ secrets.SLACK_CHANNEL_ID_GITHUB_NOTIFICATION }}
 ```
+
+Manual dispatch always runs non-blocking `history` mode. PR and push modes require their native GitHub event payloads so the reusable workflow can derive an accurate incremental commit range.
 
 Slack secrets are optional. When both `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID_GITHUB_NOTIFICATION` are present, failures send a sanitized notification with counts and a link to the GitHub Actions run.
 
