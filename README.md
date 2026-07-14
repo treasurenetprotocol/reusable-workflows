@@ -25,7 +25,7 @@ Supported scan modes:
 - `push`: scans new pushed commits and fails on findings at or above `fail_threshold`.
 - `history`: scans available repository history for inventory and does not block by default.
 
-The workflow intentionally does not print raw secret values in logs, step summaries, or Slack notifications. Summaries include scanner engine, severity, rule, path, line, and commit where available. Confirmed secrets require rotation, revocation, migration, or abandonment; deleting a file or rewriting history is not sufficient remediation by itself.
+The workflow intentionally does not print raw secret values in logs, step summaries, artifacts, or Slack notifications. Summaries include scanner engine, severity, rule, path, line, and commit where available. Every successful scan also uploads a 30-day `tn-secret-scan-<run-id>` artifact containing the Markdown summary and the complete sanitized JSON inventory. Raw Gitleaks and TruffleHog reports are never uploaded. Confirmed secrets require rotation, revocation, migration, or abandonment; deleting a file or rewriting history is not sufficient remediation by itself.
 
 ### Minimal Caller
 
