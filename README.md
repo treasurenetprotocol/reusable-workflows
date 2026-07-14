@@ -29,34 +29,40 @@ For a newly created branch where GitHub does not provide a usable `before` SHA, 
 
 The workflow intentionally does not print raw secret values in logs, step summaries, artifacts, or Slack notifications. Summaries include scanner engine, severity, rule, path, line, and commit where available. Every successful scan also uploads a 30-day `tn-secret-scan-<run-id>` artifact containing the Markdown summary and the complete sanitized JSON inventory. Raw Gitleaks and TruffleHog reports are never uploaded. Confirmed secrets require rotation, revocation, migration, or abandonment; deleting a file or rewriting history is not sufficient remediation by itself.
 
-### Minimal Caller
+### Organization Incremental Caller
+
+INF-163 installs this caller in every active TN repository. It scans every pull
+request and every pushed commit, while leaving full-history inventory to
+INF-164. The immutable workflow and configuration ref keep the organization
+rollout reproducible.
 
 ```yaml
-name: TN Secret Scan
+name: TN Incremental Secret Scan
 
 on:
   pull_request:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  secret_scan:
-    uses: treasurenetprotocol/reusable-workflows/.github/workflows/reusable-secrets-scanning.yml@main
+  secret-scan:
+    uses: treasurenetprotocol/reusable-workflows/.github/workflows/reusable-secrets-scanning.yml@d82d3ef57336183b47a09c40717ea0560e4e50f6
     with:
-      scan_mode: ${{ github.event_name == 'workflow_dispatch' && 'history' || github.event_name == 'pull_request' && 'pr' || 'push' }}
+      scan_mode: ${{ github.event_name == 'pull_request' && 'pr' || 'push' }}
       fetch_depth: 0
       fail_threshold: high
-      config_ref: main
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-      SLACK_CHANNEL_ID_GITHUB_NOTIFICATION: ${{ secrets.SLACK_CHANNEL_ID_GITHUB_NOTIFICATION }}
+      config_ref: d82d3ef57336183b47a09c40717ea0560e4e50f6
 ```
 
-Manual dispatch always runs non-blocking `history` mode. PR and push modes require their native GitHub event payloads so the reusable workflow can derive an accurate incremental commit range.
+PR and push modes require their native GitHub event payloads so the reusable workflow can derive an accurate incremental commit range. Do not add a history dispatch to the organization incremental caller; use the separately controlled INF-164 process for historical inventory.
+
+GitHub native secret scanning push protection is the receive-time control for provider-supported secret types. The Actions `push` event runs after GitHub accepts a commit and adds the broader TN-specific detection layer. The default-branch ruleset requires `secret-scan / SecurityScan`, so high and critical new findings cannot be merged through a pull request.
 
 Slack secrets are optional. When both `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID_GITHUB_NOTIFICATION` are present, failures send a sanitized notification with counts and a link to the GitHub Actions run.
+
+When the check fails, do not paste a secret into a PR, issue, chat, or allowlist request. Review the sanitized path/rule metadata, revoke or rotate a real credential, remove it from the proposed change, and rerun the check. Deleting or reverting an already committed real secret is not sufficient remediation. For a suspected false positive, request security review with the sanitized rule, path, and line only; allowlist changes must be narrow and justified.
 
 ### Inputs
 
