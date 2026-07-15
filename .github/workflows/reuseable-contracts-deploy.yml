@@ -1,0 +1,243 @@
+name: Reusable Deploy Contracts
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      network:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        type: string
+    secrets:
+      rpc:
+        required: true
+      private_key:
+        required: true
+      access_key_id:
+        required: true
+      secret_access_key:
+        required: true
+
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 20
+  S3_BUCKET: tn-deployment-contract-abis
+  CONTRACT_STATE_SECRET_SUFFIX: treasurenet-contract-deployments
+  AWS_REGION: ${{ inputs.aws_region && inputs.aws_region || 'us-west-1' }}
+  DINGTALK_ACCESS_TOKEN: 2d2baaef4ce067ebbeb9c3f552957fdb6de73a9a0b748b6dbca5a66aec0f6bac
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ inputs.network || 'manual' }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Compile and deploy ${{ inputs.target }} on ${{ inputs.network }}
+    runs-on:
+      - self-hosted
+      - linux
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Remove lockfile and node_modules
+        run: |
+          rm -f package-lock.json
+          rm -rf node_modules
+
+      - name: Install dependencies (fresh lock on runner OS)
+        run: npm install --no-audit --no-fund
+
+      - name: Compile contracts
+        run: npm run compile
+
+      - name: Resolve npm script
+        id: script
+        shell: bash
+        run: |
+          ACTION="${{ inputs.action }}"
+          TARGET="${{ inputs.target }}"
+          NETWORK="${{ inputs.network }}"
+          SCRIPT="${ACTION}:${TARGET}:${NETWORK}"
+
+          SCRIPT_ENV="$SCRIPT" node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const script = process.env.SCRIPT_ENV;
+          if (!pkg.scripts[script]) {
+            console.error(`Script "${script}" not found in package.json. Add it before rerunning.`);
+            process.exit(1);
+          }
+          NODE
+
+          echo "script_name=$SCRIPT" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare network env
+        shell: bash
+        run: |
+          RPC="${{ secrets.rpc }}"
+          KEY="${{ secrets.private_key }}"
+
+          if [ -z "$RPC" ]; then
+            echo "RPC is not provided." >&2
+            exit 1
+          fi
+          if [ -z "$KEY" ]; then
+            echo "Private key is not provided." >&2
+            exit 1
+          fi
+
+          echo "RPC=$RPC" >> "$GITHUB_ENV"
+          echo "NETWORK=${{ inputs.network }}" >> "$GITHUB_ENV"
+          printf 'PRIVATE_KEY=%s\n' "$KEY" >> "$GITHUB_ENV"
+
+      - name: Restore deployments state from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          SRC="s3://${S3_BUCKET}/${NETWORK}/state.json"
+          DEST="deployments/${NETWORK}.json"
+          if aws s3 ls "$SRC" >/dev/null 2>&1; then
+            aws s3 cp "$SRC" "$DEST"
+            echo "Restored deployments from $SRC"
+          else
+            echo "No existing deployments file at $SRC; starting fresh"
+          fi
+
+      - name: Run deployment script
+        env:
+          RPC: ${{ env.RPC }}
+          PRIVATE_KEY: ${{ env.PRIVATE_KEY }}
+        run: npm run ${{ steps.script.outputs.script_name }}
+
+      - name: Ensure jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Collect ABI JSONs (CLI)
+        run: |
+          set -euo pipefail
+          SRC="artifacts/contracts"
+          OUT="/tmp/abi-json"
+          FLAT="/tmp/abi-flat"
+          rm -rf "$OUT"
+          rm -rf "$FLAT"
+          mkdir -p "$OUT"
+          mkdir -p "$FLAT"
+          if [ ! -d "$SRC" ]; then
+            echo "Artifacts directory not found: $SRC" >&2
+            exit 1
+          fi
+          find "$SRC" -type f -name '*.json' ! -name '*.dbg.json' -print0 \
+            | while IFS= read -r -d '' file; do
+                if jq -e 'has("abi") and (.abi | type=="array")' "$file" >/dev/null 2>&1; then
+                  rel="${file#$SRC/}"
+                  mkdir -p "$OUT/$(dirname "$rel")"
+                  cp "$file" "$OUT/$rel"
+                  echo "kept: $rel"
+                else
+                  echo "skip (no abi): ${file#$SRC/}"
+                fi
+              done
+          # Flatten ABI filenames to avoid nested paths in S3
+          find "$OUT" -type f -name '*.json' ! -name '*.dbg.json' -print0 \
+            | while IFS= read -r -d '' file; do
+                base="$(basename "$file")"
+                cp "$file" "$FLAT/$base"
+              done
+          if [ "$(find "$OUT" -type f | wc -l)" -eq 0 ]; then
+            echo "No ABI JSON files found to upload." >&2
+            exit 1
+          fi
+
+      - name: Upload ABIs to S3 (AWS CLI)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          DATE="$(date -u +%F)"
+          LATEST="s3://${S3_BUCKET}/${NETWORK}/abis/latest/"
+          DATED="s3://${S3_BUCKET}/${NETWORK}/abis/${DATE}/"
+          aws s3 cp /tmp/abi-flat/ "$LATEST" \
+            --recursive \
+            --exclude "*.dbg.json" \
+            --content-type "application/json"
+          aws s3 cp /tmp/abi-flat/ "$DATED" \
+            --recursive \
+            --exclude "*.dbg.json" \
+            --content-type "application/json"
+          echo "Uploaded ABI JSONs to $LATEST and $DATED"
+
+      - name: Upload deployments state to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          NETWORK: ${{ inputs.network }}
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          FILE="deployments/${NETWORK}.json"
+          if [ ! -f "$FILE" ]; then
+            echo "Deployment file not found: $FILE" >&2
+            exit 1
+          fi
+          aws s3 cp "$FILE" "s3://${S3_BUCKET}/${NETWORK}/state.json"
+          echo "Uploaded deployments state to s3://${S3_BUCKET}/${NETWORK}/state.json"
+
+      - name: Build DingTalk message
+        if: ${{ always() }}
+        id: ding_msg
+        env:
+          ACTION: ${{ inputs.action }}
+          TARGET: ${{ inputs.target }}
+          NETWORK: ${{ inputs.network }}
+        run: |
+          set -euo pipefail
+          FILE="deployments/${NETWORK}.json"
+          ADDR_SUMMARY="No deployments file"
+          if [ -f "$FILE" ]; then
+            ADDR_SUMMARY=$(jq -r '(.entries[0].contracts // {}) | to_entries | map("\(.key)=\(.value.address)") | join(", ")' "$FILE")
+            if [ -z "$ADDR_SUMMARY" ]; then
+              ADDR_SUMMARY="No contracts recorded"
+            fi
+          fi
+          MESSAGE="GitRunner: action=${ACTION}, target=${TARGET}, network=${NETWORK}. Latest contracts: ${ADDR_SUMMARY}"
+          echo "content=${MESSAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify DingTalk
+        if: ${{ always() }}
+        uses: treasurenetprotocol/reusable-workflows/.github/actions/dingtalk-notify@feature/add-contracts-deploy-DEV-749
+        with:
+          access_token: ${{ env.DINGTALK_ACCESS_TOKEN }}
+          content: ${{ steps.ding_msg.outputs.content }}

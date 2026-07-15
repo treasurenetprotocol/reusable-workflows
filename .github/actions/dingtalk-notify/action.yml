@@ -1,0 +1,23 @@
+name: DingTalk Notify
+description: Send a text message to DingTalk robot
+inputs:
+  access_token:
+    description: DingTalk robot access_token
+    required: true
+  content:
+    description: Text content to send
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Send DingTalk message
+      shell: bash
+      env:
+        ACCESS_TOKEN: ${{ inputs.access_token }}
+        CONTENT: ${{ inputs.content }}
+      run: |
+        set -euo pipefail
+        WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=${ACCESS_TOKEN}"
+        curl -sS -X POST "$WEBHOOK" \
+          -H 'Content-Type: application/json' \
+          -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"${CONTENT}\"}}"
