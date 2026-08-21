@@ -168,7 +168,8 @@ jobs:
             --query SecretString --output text > "$secret_json"
 
           jq -e 'type == "object"' "$secret_json" > /dev/null
-          printf '%s' "$SECRET_FILE_MAP" | jq -e 'type == "object"' > .secret-file-map.json
+          printf '%s' "$SECRET_FILE_MAP" > .secret-file-map.json
+          jq -e 'type == "object"' .secret-file-map.json > /dev/null
           mkdir -p .runtime-secrets
 
           while IFS=$'\t' read -r secret_key relative_path; do
