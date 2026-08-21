@@ -23,6 +23,11 @@ on:
         description: 'Path to the docker-compose.yml file'
         required: true
         type: string
+      secret-file-map:
+        description: 'Optional JSON object mapping secret keys to relative paths below .runtime-secrets'
+        required: false
+        default: '{}'
+        type: string
       isMainnet:
         description: 'Whether we are deploying to mainnet'
         required: true
@@ -149,15 +154,42 @@ jobs:
           echo "EC2_USER=ubuntu" >> $GITHUB_ENV  
 
       - name: Retrieve application secrets
+        env:
+          SECRET_FILE_MAP: ${{ inputs.secret-file-map }}
         run: |
-          
-          SECRET_STRING=$(aws secretsmanager get-secret-value \
+          set -euo pipefail
+          umask 077
+          secret_json=$(mktemp)
+          trap 'rm -f "$secret_json"' EXIT
+
+          aws secretsmanager get-secret-value \
             --secret-id ${{ inputs.aws-secret-name }} \
             --region ${{ inputs.ecr-repo-aws-region }} \
-            --query SecretString --output text)
-          echo "${SECRET_STRING}" \
-            | jq -r 'to_entries|map("\(.key)=\(.value|tostring)")|.[]' \
-            > .env
+            --query SecretString --output text > "$secret_json"
+
+          jq -e 'type == "object"' "$secret_json" > /dev/null
+          printf '%s' "$SECRET_FILE_MAP" | jq -e 'type == "object"' > .secret-file-map.json
+          mkdir -p .runtime-secrets
+
+          while IFS=$'\t' read -r secret_key relative_path; do
+            case "$secret_key" in
+              ''|*[!A-Z0-9_]* ) echo "Invalid secret-file-map key" >&2; exit 1 ;;
+            esac
+            case "$relative_path" in
+              ''|/*|*'..'*|*'//' ) echo "Invalid secret-file-map path" >&2; exit 1 ;;
+            esac
+
+            mkdir -p ".runtime-secrets/$(dirname "$relative_path")"
+            jq -er --arg key "$secret_key" '.[$key] | select(type == "string")' "$secret_json" \
+              > ".runtime-secrets/$relative_path"
+            chmod 600 ".runtime-secrets/$relative_path"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .secret-file-map.json)
+
+          jq -r --slurpfile file_map .secret-file-map.json \
+            'to_entries[] | select(.key as $key | ($file_map[0] | has($key) | not)) | "\(.key)=\(.value|tostring)"' \
+            "$secret_json" > .env
+          chmod 600 .env
+          rm -f .secret-file-map.json
 
       # ——— DEV / TESTNET: prepare SSH and deploy ———
       - name: Prepare SSH for dev/testnet
@@ -172,12 +204,16 @@ jobs:
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.env
+          scp -r -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .runtime-secrets ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.runtime-secrets
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             ${{ env.EC2_USER  }}@${{ env.EC2_HOST }} << 'EOF'
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
             mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./.env
+            rm -rf ./.runtime-secrets
+            mv /home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets ./.runtime-secrets
+            chmod -R go-rwx ./.runtime-secrets
             sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
             export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
@@ -221,6 +257,9 @@ jobs:
           scp -o StrictHostKeyChecking=no \
             ${{ inputs.composefile-path }} .env \
             us-west-1-jump-server.treasurenet.io:~/
+          scp -r -o StrictHostKeyChecking=no \
+            .runtime-secrets \
+            us-west-1-jump-server.treasurenet.io:~/
 
       - name: Deploy and restart nodes on mainnet
         if: ${{ inputs.isMainnet }}
@@ -235,6 +274,10 @@ jobs:
             -i ~/mainnet-nodes-us-west-1.pem \
             .env ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.env
 
+          scp -r -o StrictHostKeyChecking=no \
+            -i ~/mainnet-nodes-us-west-1.pem \
+            .runtime-secrets ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets
+
             # login and deploy
           ssh -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
@@ -243,6 +286,9 @@ jobs:
             cd    ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
           mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
           mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./.env
+          rm -rf ./.runtime-secrets
+          mv /home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets ./.runtime-secrets
+          chmod -R go-rwx ./.runtime-secrets
           sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
             export AWS_SECRET_ACCESS_KEY=${{env.AWS_SECRET_ACCESS_KEY}}
@@ -256,6 +302,10 @@ jobs:
           docker compose up -d
           INNER_EOF
           OUTER_EOF
+
+      - name: Clean up local secret material
+        if: ${{ always() }}
+        run: rm -rf .env .runtime-secrets .secret-file-map.json
 
       - name: Clean up Docker credentials
         run: rm -f /home/runner/.docker/config.json
