@@ -149,7 +149,11 @@ jobs:
 
           echo "DEPLOY_ENV=${deploy_env}" >> $GITHUB_ENV
           echo "DEPLOYMENT_PATH=${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
-          echo "MAINNET_DEPLOYMENT_PATH=${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}/${deploy_env}" >> $GITHUB_ENV
+          # Mainnet Nginx mounts the repository directory at /data and its
+          # per-repository virtual-host configuration serves that directory
+          # directly.  Do not append DEPLOY_ENV here: doing so deploys into an
+          # unserved child directory (for example, <repo>/mainnet).
+          echo "MAINNET_DEPLOYMENT_PATH=${{ env.MAINNET_DEPLOYMENT_PATH }}/${{ inputs.repo-name }}" >> $GITHUB_ENV
 
       - name: "Fetch Nginx Certificates"
         run: |
