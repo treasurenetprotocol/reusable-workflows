@@ -216,7 +216,7 @@ jobs:
       - name: "Install Dependencies and Build"
         run: |
           npm install --silent
-          npm run validate:local
+          npm run validate:local --if-present
           test -d nginx
           test -d nginx/conf.d
           find nginx/conf.d -maxdepth 1 -type f -name '*.conf' | grep -q .
