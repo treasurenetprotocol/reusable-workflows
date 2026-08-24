@@ -28,6 +28,11 @@ on:
         required: false
         default: '{}'
         type: string
+      rsa-keypair-file-map:
+        description: 'Optional JSON object mapping RSA private-key paths to matching public-key paths below .runtime-secrets'
+        required: false
+        default: '{}'
+        type: string
       isMainnet:
         description: 'Whether we are deploying to mainnet'
         required: true
@@ -156,11 +161,14 @@ jobs:
       - name: Retrieve application secrets
         env:
           SECRET_FILE_MAP: ${{ inputs.secret-file-map }}
+          RSA_KEYPAIR_FILE_MAP: ${{ inputs.rsa-keypair-file-map }}
         run: |
           set -euo pipefail
           umask 077
           secret_json=$(mktemp)
-          trap 'rm -f "$secret_json"' EXIT
+          derived_public_key=$(mktemp)
+          configured_public_key=$(mktemp)
+          trap 'rm -f "$secret_json" "$derived_public_key" "$configured_public_key" .secret-file-map.json .rsa-keypair-file-map.json' EXIT
 
           aws secretsmanager get-secret-value \
             --secret-id ${{ inputs.aws-secret-name }} \
@@ -186,11 +194,43 @@ jobs:
             chmod 600 ".runtime-secrets/$relative_path"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .secret-file-map.json)
 
+          printf '%s' "$RSA_KEYPAIR_FILE_MAP" > .rsa-keypair-file-map.json
+          jq -e 'type == "object"' .rsa-keypair-file-map.json > /dev/null
+
+          while IFS=$'\t' read -r private_relative_path public_relative_path; do
+            case "$private_relative_path" in
+              ''|/*|*'..'*|*'//' ) echo "Invalid RSA private-key path" >&2; exit 1 ;;
+            esac
+            case "$public_relative_path" in
+              ''|/*|*'..'*|*'//' ) echo "Invalid RSA public-key path" >&2; exit 1 ;;
+            esac
+
+            private_path=".runtime-secrets/$private_relative_path"
+            public_path=".runtime-secrets/$public_relative_path"
+            if ! openssl rsa -in "$private_path" -check -noout > /dev/null 2>&1; then
+              echo "Invalid configured RSA private key" >&2
+              exit 1
+            fi
+            if ! openssl rsa -pubin -in "$public_path" -pubout -out "$configured_public_key" > /dev/null 2>&1; then
+              echo "Invalid configured RSA public key" >&2
+              exit 1
+            fi
+            if ! openssl rsa -in "$private_path" -pubout -out "$derived_public_key" > /dev/null 2>&1; then
+              echo "Unable to derive configured RSA public key" >&2
+              exit 1
+            fi
+            if ! cmp -s "$derived_public_key" "$configured_public_key"; then
+              echo "Configured RSA private and public keys do not form a pair" >&2
+              exit 1
+            fi
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .rsa-keypair-file-map.json)
+
           jq -r --slurpfile file_map .secret-file-map.json \
             'to_entries[] | select(.key as $key | ($file_map[0] | has($key) | not)) | "\(.key)=\(.value|tostring)"' \
             "$secret_json" > .env
           chmod 600 .env
           rm -f .secret-file-map.json
+          rm -f .rsa-keypair-file-map.json
 
       # ——— DEV / TESTNET: prepare SSH and deploy ———
       - name: Prepare SSH for dev/testnet
