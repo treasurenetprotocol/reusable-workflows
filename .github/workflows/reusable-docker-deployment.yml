@@ -243,17 +243,29 @@ jobs:
       - name: Deploy to dev/testnet
         if: ${{ !inputs.isMainnet }}
         run: |
+          set -euo pipefail
+          runtime_secret_stage="/home/${{ env.EC2_USER }}/${{ inputs.ecr-repo }}.runtime-secrets-${{ github.run_id }}-${{ github.run_attempt }}"
+          find .runtime-secrets -type f -printf '%P\n' | LC_ALL=C sort > .runtime-secrets.manifest
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{inputs.composefile-path}} ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.yml
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.env
-          scp -r -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .runtime-secrets ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:/home/${{ env.EC2_USER  }}/${{ inputs.ecr-repo }}.runtime-secrets
+          scp -r -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .runtime-secrets ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:"${runtime_secret_stage}"
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .runtime-secrets.manifest ${{ env.EC2_USER  }}@${{ env.EC2_HOST }}:"${runtime_secret_stage}.manifest"
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             ${{ env.EC2_USER  }}@${{ env.EC2_HOST }} << 'EOF'
+            set -euo pipefail
+            runtime_secret_stage="/home/${{ env.EC2_USER }}/${{ inputs.ecr-repo }}.runtime-secrets-${{ github.run_id }}-${{ github.run_attempt }}"
+            runtime_secret_manifest="${runtime_secret_stage}.manifest"
+            test -d "$runtime_secret_stage"
+            test ! -e "$runtime_secret_stage/.runtime-secrets"
+            find "$runtime_secret_stage" -type f -printf '%P\n' | LC_ALL=C sort > "${runtime_secret_stage}.actual-manifest"
+            cmp -s "$runtime_secret_manifest" "${runtime_secret_stage}.actual-manifest"
+            rm -f "$runtime_secret_manifest" "${runtime_secret_stage}.actual-manifest"
             mkdir -p ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
             mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./.env
             rm -rf ./.runtime-secrets
-            mv /home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets ./.runtime-secrets
+            mv "$runtime_secret_stage" ./.runtime-secrets
             chmod -R go-rwx ./.runtime-secrets
             sed -i '/image:/s|image:.*|image: ${{ env.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
@@ -295,17 +307,26 @@ jobs:
       - name: Upload files to bastion host (mainnet)
         if: ${{ inputs.isMainnet }}
         run: |
+          set -euo pipefail
+          runtime_secret_stage="${{ inputs.ecr-repo }}.runtime-secrets-${{ github.run_id }}-${{ github.run_attempt }}"
+          find .runtime-secrets -type f -printf '%P\n' | LC_ALL=C sort > .runtime-secrets.manifest
           scp -o StrictHostKeyChecking=no \
             ${{ inputs.composefile-path }} .env \
             us-west-1-jump-server.treasurenet.io:~/
           scp -r -o StrictHostKeyChecking=no \
             .runtime-secrets \
-            us-west-1-jump-server.treasurenet.io:~/
+            us-west-1-jump-server.treasurenet.io:"~/${runtime_secret_stage}"
+          scp -o StrictHostKeyChecking=no \
+            .runtime-secrets.manifest \
+            us-west-1-jump-server.treasurenet.io:"~/${runtime_secret_stage}.manifest"
 
       - name: Deploy and restart nodes on mainnet
         if: ${{ inputs.isMainnet }}
         run: |
+          set -euo pipefail
           ssh us-west-1-jump-server.treasurenet.io << 'OUTER_EOF'
+          set -euo pipefail
+          runtime_secret_stage="${{ inputs.ecr-repo }}.runtime-secrets-${{ github.run_id }}-${{ github.run_attempt }}"
             # copy compose + env into target instance
           scp -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
@@ -317,18 +338,32 @@ jobs:
 
           scp -r -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
-            .runtime-secrets ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets
+            "$runtime_secret_stage" ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/"$runtime_secret_stage"
+
+          scp -o StrictHostKeyChecking=no \
+            -i ~/mainnet-nodes-us-west-1.pem \
+            "${runtime_secret_stage}.manifest" ubuntu@${{ env.EC2_HOST }}:/home/ubuntu/"${runtime_secret_stage}.manifest"
+
+          rm -rf "$runtime_secret_stage" "${runtime_secret_stage}.manifest"
 
             # login and deploy
           ssh -o StrictHostKeyChecking=no \
             -i ~/mainnet-nodes-us-west-1.pem \
             ubuntu@${{ env.EC2_HOST }} << 'INNER_EOF'
+          set -euo pipefail
+          runtime_secret_stage="/home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets-${{ github.run_id }}-${{ github.run_attempt }}"
+          runtime_secret_manifest="${runtime_secret_stage}.manifest"
+          test -d "$runtime_secret_stage"
+          test ! -e "$runtime_secret_stage/.runtime-secrets"
+          find "$runtime_secret_stage" -type f -printf '%P\n' | LC_ALL=C sort > "${runtime_secret_stage}.actual-manifest"
+          cmp -s "$runtime_secret_manifest" "${runtime_secret_stage}.actual-manifest"
+          rm -f "$runtime_secret_manifest" "${runtime_secret_stage}.actual-manifest"
             mkdir -p ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
             cd    ${{ env.MAINNET_AWS_DEFAULT_DEPLOYMENT_PATH }}/${{ inputs.ecr-repo }}
           mv /home/ubuntu/${{ inputs.ecr-repo }}.yml ./docker-compose.yml
           mv /home/ubuntu/${{ inputs.ecr-repo }}.env ./.env
           rm -rf ./.runtime-secrets
-          mv /home/ubuntu/${{ inputs.ecr-repo }}.runtime-secrets ./.runtime-secrets
+          mv "$runtime_secret_stage" ./.runtime-secrets
           chmod -R go-rwx ./.runtime-secrets
           sed -i '/image:/s|image:.*|image: ${{ secrets.ECR_REGISTRY }}/${{ inputs.ecr-repo }}:${{ github.sha }}|' docker-compose.yml
             export AWS_ACCESS_KEY_ID=${{env.AWS_ACCESS_KEY_ID}}
@@ -346,7 +381,7 @@ jobs:
 
       - name: Clean up local secret material
         if: ${{ always() }}
-        run: rm -rf .env .runtime-secrets .secret-file-map.json
+        run: rm -rf .env .runtime-secrets .runtime-secrets.manifest .secret-file-map.json
 
       - name: Clean up Docker credentials
         run: rm -f /home/runner/.docker/config.json
