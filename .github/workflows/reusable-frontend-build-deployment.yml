@@ -83,7 +83,7 @@ jobs:
           echo "TIME=$(date '+%Y%m%d_%H%M%S')" >> $GITHUB_ENV
 
       - name: "Checkout Repository"
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup cloudflared
         run: |
@@ -101,27 +101,27 @@ jobs:
         run: cloudflared -v
 
       - name: "Set Up Node.js"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: "Configure AWS Credentials (Dev/Test)"
         if: ${{ !inputs.isDapp && !(inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet)) }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: arn:aws:iam::381492270411:role/GitHubActionsOIDCRole
           aws-region: ${{ inputs.s3-aws-region }}
 
       - name: "Configure AWS Credentials (Dapps)"
         if: ${{ inputs.isDapp }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: arn:aws:iam::381492075531:role/GitHubActionsOIDCRole
           aws-region: ${{ inputs.s3-aws-region }}
 
       - name: "Configure AWS Credentials (Mainnet)"
         if: ${{ inputs.environment == 'mainnet' || (inputs.environment == '' && inputs.isMainnet) }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
