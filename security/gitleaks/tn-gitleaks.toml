@@ -14,11 +14,15 @@ paths = [
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)yarn\.lock$''',
   '''(^|/)go\.sum$''',
-  '''(^|/)Cargo\.lock$'''
+  '''(^|/)Cargo\.lock$''',
+  # INF-200: narrow allowlist entries (C: public dev-chain test keys are not credentials)
+  '''(^|/)tests?/.*\.test\.(js|ts)$''',
 ]
 regexes = [
   '''(?i)(fake|dummy|example|placeholder|not-a-real-secret|changeme|test-only)''',
-  '''0x[a-fA-F0-9]{40}'''
+  '''0x[a-fA-F0-9]{40}''',
+  # INF-200: narrow allowlist entries (A: basic-auth URL whose credential is an interpolation, not a value)
+  '''://[^/@[:space:]]*:[^/@[:space:]]*\$[^/@[:space:]]*@''',
 ]
 
 [[rules]]
