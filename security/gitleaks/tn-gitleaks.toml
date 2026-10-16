@@ -415,3 +415,23 @@ keywords = [
   "password",
   "credential"
 ]
+
+# INF-208: scoped allowlist for historical commits where credentials are abandoned, rotated, or test-only.
+# See https://linear.app/treasurenet/issue/INF-208 for full rationale.
+# Affected credentials (all revoked / abandoned / test-only per Linear INF-208 comment 5af90438):
+#   - DingTalk webhook access_token 71c6... (business notifications) — revoked in DingTalk backend
+#   - DingTalk webhook access_token e220... (warning channel, dead code) — revoked in DingTalk backend
+#   - AWS RDS PostgreSQL password at .env.bak:33 — abandoned per user (no impact)
+#   - MongoDB password at .env.bak:5 — test server (gitleaks missed due to low entropy)
+#   - TNGATEWAY_CLIENT_SECRET 36f0... at .env.bak:28 — test server 124.70.23.119
+# Repo: treasurenetprotocol/tnservices_dataprovider (private).
+# History rewrite is out of scope (private repo + force-push of deploy-mainnet cost > benefit).
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "INF-208 historical commits — credentials abandoned, rotated, or test-only"
+commits = [
+  "91085673374b37d66fe7afd3f12b190fac3a7303",
+  "4d2618a2d1e68b23ecaad264765f351e53ec367c",
+]
