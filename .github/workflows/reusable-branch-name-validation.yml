@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default: 'hotfix-testnet/,hotfix-main/'
+      dependabot_prefixes:
+        description: 'Comma-separated Dependabot branch prefixes (dependabot/**) that bypass branch-name and PR-title validation. The match is slash-terminated, so feature/*, fix/*, and names such as dependabot-foo are unchanged. Blank entries are ignored. Set this to an empty string to disable the exemption.'
+        required: false
+        type: string
+        default: 'dependabot/'
       exception_branch_names:
         description: 'Comma-separated list of complete branch names that bypass validation (e.g., develop,testnet,mainnet)'
         required: false
@@ -57,11 +62,15 @@ jobs:
             const allowedTeams = '${{ inputs.allowed_team_names }}'.split(',');
             const validPrefixes = '${{ inputs.valid_prefixes }}'.split(',');
             const hotfixPrefixes = '${{ inputs.hotfix_prefixes }}'.split(',');
+            const dependabotPrefixes = '${{ inputs.dependabot_prefixes }}'.split(',')
+              .map(prefix => prefix.trim())
+              .filter(prefix => prefix.length > 0);
             const exceptionBranchNames = '${{ inputs.exception_branch_names }}'.split(',');
             
             console.log(`Allowed team names: ${allowedTeams.join(', ')}`);
             console.log(`Valid prefixes: ${validPrefixes.join(', ')}`);
             console.log(`Hotfix prefixes: ${hotfixPrefixes.join(', ')}`);
+            console.log(`Dependabot prefixes: ${dependabotPrefixes.join(', ')}`);
             console.log(`Exception branch names: ${exceptionBranchNames.join(', ')}`);
             
             let allIssues = [];
@@ -74,6 +83,21 @@ jobs:
               console.log('Hotfix branch detected - validation passed for both branch and PR title');
               core.setOutput('valid', 'true');
               core.setOutput('message', 'Hotfix branch - validation skipped');
+              return;
+            }
+
+            // GitHub Dependabot branches are dependabot/<ecosystem>/<update>,
+            // for example dependabot/npm_and_yarn/svgo-2.8.4. They cannot carry
+            // a conventional type prefix or a team ticket. Require at least one
+            // character after the prefix so the bare prefix is not exempt, and
+            // do not treat feature/*, fix/*, or dependabot-foo as Dependabot.
+            const isDependabotBranch = dependabotPrefixes.some(prefix =>
+              branchName.startsWith(prefix) && branchName.length > prefix.length
+            );
+            if (isDependabotBranch) {
+              console.log('Dependabot branch detected - validation passed for both branch and PR title');
+              core.setOutput('valid', 'true');
+              core.setOutput('message', 'Dependabot branch - validation skipped');
               return;
             }
             
@@ -219,6 +243,12 @@ jobs:
             ### 🚨 Exception: Hotfix Branches
             Hotfix branches and their PRs are exempt from this validation:
             ${{ inputs.hotfix_prefixes }}
+
+            ### 🚨 Exception: Dependabot Branches
+            Branches under `dependabot/**` are exempt from branch-name and PR-title validation, because GitHub Dependabot names them `dependabot/<ecosystem>/<update>` (for example `dependabot/npm_and_yarn/svgo-2.8.4`) and titles them as dependency bumps. Configured prefixes:
+            ${{ inputs.dependabot_prefixes }}
+
+            A human feature or fix branch is still required to use a valid type prefix and a team ticket. A name such as `dependabot-foo` or `feature/dependabot-update-INF-219` is not this exemption.
             
             ### 🚨 Exception: Exception Branches
             Exception branches and their PRs are exempt from this validation:

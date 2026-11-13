@@ -4,10 +4,15 @@ on:
   workflow_call:
     inputs:
       merge_rules:
-        description: 'JSON string defining allowed merge rules (e.g., {"testnet": ["develop", "hotfix-testnet"], "main": ["testnet", "hotfix-main"]})'
+        description: 'JSON string defining allowed merge rules (e.g., {"testnet": ["develop", "hotfix-testnet"], "main": ["testnet", "hotfix-main"]}). Dependabot branches are not listed here; dependabot_prefixes allows dependabot/** into protected targets even when callers pass this JSON explicitly.'
         required: false
         type: string
         default: '{"testnet": ["develop", "hotfix-testnet"], "main": ["testnet", "hotfix-main"]}'
+      dependabot_prefixes:
+        description: 'Comma-separated source-branch prefixes that may merge into a protected target. Default dependabot/ allows dependabot/** (for example dependabot/npm_and_yarn/svgo-2.8.4) without changing exact, testnet, main, or hotfix matches. Blank entries are ignored. Set this to an empty string to disable the exemption.'
+        required: false
+        type: string
+        default: 'dependabot/'
     outputs:
       validation_result:
         description: 'Result of the validation (true/false)'
@@ -51,6 +56,14 @@ jobs:
               core.setOutput('message', 'Invalid merge rules configuration');
               return;
             }
+
+            // Kept separate from merge_rules. Callers such as branch-validation.yml
+            // pass that JSON explicitly, so adding dependabot to the default
+            // ruleset would not reach them.
+            const dependabotPrefixes = '${{ inputs.dependabot_prefixes }}'.split(',')
+              .map(prefix => prefix.trim())
+              .filter(prefix => prefix.length > 0);
+            console.log(`Dependabot prefixes: ${dependabotPrefixes.join(', ')}`);
             
             // Check if this is a valid merge
             let isValidMerge = false;
@@ -64,8 +77,17 @@ jobs:
               const hotfixMatch = allowedMerges[targetBranch].some(allowed => 
                 allowed.startsWith('hotfix-') && sourceBranch.startsWith(allowed + '/')
               );
+
+              // dependabot/** only. The source must continue past the prefix, so
+              // "dependabot" and "dependabot-foo" stay on the normal rules.
+              const dependabotMatch = dependabotPrefixes.some(prefix =>
+                sourceBranch.startsWith(prefix) && sourceBranch.length > prefix.length
+              );
+              if (dependabotMatch) {
+                console.log(`Dependabot branch '${sourceBranch}' is allowed to merge into protected target '${targetBranch}'`);
+              }
               
-              isValidMerge = exactMatch || hotfixMatch;
+              isValidMerge = exactMatch || hotfixMatch || dependabotMatch;
               
               if (!isValidMerge) {
                 errorMessage = `❌ Merge from '${sourceBranch}' to '${targetBranch}' is not allowed`;
@@ -111,10 +133,18 @@ jobs:
             #### 🎯 Merges to `testnet` branch
             - ✅ `develop` → `testnet`
             - ✅ `hotfix-testnet/*` → `testnet`
+            - ✅ `dependabot/**` → `testnet`
             
             #### 🎯 Merges to `main` branch  
             - ✅ `testnet` → `main`
             - ✅ `hotfix-main/*` → `main`
+            - ✅ `dependabot/**` → `main`
+
+            #### 🤖 Dependabot updates
+            - ✅ `dependabot/**` → `testnet`
+            - ✅ `dependabot/**` → `main`
+            - Example: `dependabot/npm_and_yarn/svgo-2.8.4` → `main`
+            - Feature and fix branches are not included in this exemption
             
             ### 📋 Branch Flow Description
             
@@ -137,15 +167,19 @@ jobs:
             
             2. **Testing branch (`testnet`)**  
                - Used for testing and validation
-               - Only `testnet` branch can merge to `main` for production release
+               - `testnet`, `hotfix-main/*`, and `dependabot/**` can merge to `main` for a production release
             
             3. **Production branch (`main`)**
                - Production environment branch
-               - Only accepts merges from `testnet` and emergency hotfixes
+               - Accepts merges from `testnet`, emergency hotfixes, and Dependabot branches (`dependabot/**`)
             
             4. **Hotfix branches**
                - `hotfix-testnet/*`: Can directly merge to `testnet`
                - `hotfix-main/*`: Can directly merge to `main`
+
+            5. **Dependabot branches**
+               - `dependabot/**`: GitHub Dependabot dependency updates may merge to a protected target, including `testnet` and `main`
+               - This does not allow `feature/*` or `fix/*` branches to skip `develop` → `testnet` → `main`
             
             ### 🔧 How to Fix
             
